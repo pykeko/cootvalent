@@ -775,8 +775,13 @@ def _pkd_install_menu():
     try:
         menu = mbm("Cootvalent")
         if menu is None:
-            print("[cootvalent] detect: menubar not available now; RESTART bcoot "
-                  "to install the menu (works at startup, not from the console).")
+            try:
+                import coot_python  # noqa: F401
+                tail = "RESTART bcoot (menu installs at startup)."
+            except Exception:
+                tail = ("this Coot build has no coot_python; use the console: "
+                        "auto_detect_and_declare(...).")
+            print("[cootvalent] detect: menu not installed -- " + tail)
             return
         asm(menu, "Auto-detect + declare covalent link", _activate)
         print("[cootvalent] OK: 'Auto-detect + declare covalent link' added to "

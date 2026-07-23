@@ -327,8 +327,13 @@ def _install_menu():
     try:
         menu = mbm("Cootvalent")
         if menu is None:
-            print("[cootvalent] smiles: menubar not available now; RESTART bcoot "
-                  "to install the menu (works at startup, not from the console).")
+            try:
+                import coot_python  # noqa: F401
+                tail = "RESTART bcoot (menu installs at startup)."
+            except Exception:
+                tail = ("this Coot build has no coot_python; use the console: "
+                        "ligand_from_smiles(smiles) / ligand_blind_find(smiles).")
+            print("[cootvalent] smiles: menu not installed -- " + tail)
             return
         asm(menu, "Ligand from SMILES...", _activate_place)
         asm(menu, "Find in density (blind search)...", _activate_blind)

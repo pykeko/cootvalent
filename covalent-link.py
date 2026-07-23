@@ -1294,14 +1294,20 @@ def _install_menu():
     try:
         menu = mbm("Cootvalent")
         if menu is None:
-            # coot_menubar_menu returns None when coot_python.main_menubar() is
-            # not available -- which happens when this is run from the console
-            # AFTER startup rather than as a startup script. Menu creation works
-            # at startup (like Coot's own extensions), so ask for a restart.
-            print("[cootvalent] menubar not available now (coot_menubar_menu -> "
-                  "None). This installs correctly at STARTUP; please RESTART "
-                  "bcoot to get the Cootvalent menu. (Functions are already "
-                  "usable from the console.)")
+            # coot_menubar_menu() returns None when coot_python.main_menubar()
+            # is unavailable. If coot_python is simply not ready yet (classic
+            # Coot 0.9 during startup) a restart fixes it; if the build has no
+            # coot_python at all (some bandicoot builds) no Python menu is
+            # possible and the console API is the interface.
+            try:
+                import coot_python  # noqa: F401
+                hint = ("menubar not ready -- RESTART bcoot; the menu installs "
+                        "at startup.")
+            except Exception:
+                hint = ("this Coot build has no coot_python, so a Python menu "
+                        "cannot be added. Use the console API: "
+                        "declare_covalent_link(...) / propagate_covalent_ncs(...).")
+            print("[cootvalent] menu not installed -- " + hint)
             return
         asm(menu, "Declare covalent link...", _activate)
         asm(menu, "Propagate covalent ligand to NCS copies...", _activate_prop)
