@@ -1259,12 +1259,32 @@ def _install_menu():
             False, False,
             "Propagate", _go_prop)
 
-    menu = coot_gui.coot_menubar_menu("Cootvalent")
-    coot_gui.add_simple_coot_menu_menuitem(menu, "Declare covalent link...", _activate)
-    coot_gui.add_simple_coot_menu_menuitem(
-        menu, "Propagate covalent ligand to NCS copies...", _activate_prop)
-    print("[cootvalent] 'Declare covalent link...' + "
-          "'Propagate covalent ligand to NCS copies...' added to the Cootvalent menu.")
+    # Resolve the menu API. Bandicoot injects coot_menubar_menu /
+    # add_simple_coot_menu_menuitem as startup globals (see a_rapper_gui.py);
+    # they are also attributes of coot_gui. Prefer the module attrs, fall back
+    # to the injected globals via __main__.
+    mbm = getattr(coot_gui, "coot_menubar_menu", None)
+    asm = getattr(coot_gui, "add_simple_coot_menu_menuitem", None)
+    if mbm is None or asm is None:
+        try:
+            import __main__
+            mbm = mbm or getattr(__main__, "coot_menubar_menu")
+            asm = asm or getattr(__main__, "add_simple_coot_menu_menuitem")
+        except Exception as e:
+            print("[cootvalent] menu API unavailable (no-graphics?):", e)
+            return
+    # Create the menu LOUDLY -- a swallowed exception here is why a menu can
+    # silently fail to appear; print the real traceback so it's diagnosable.
+    try:
+        menu = mbm("Cootvalent")
+        asm(menu, "Declare covalent link...", _activate)
+        asm(menu, "Propagate covalent ligand to NCS copies...", _activate_prop)
+        print("[cootvalent] OK: 'Cootvalent' menu ready "
+              "(Declare covalent link... + Propagate covalent ligand to NCS copies...).")
+    except Exception:
+        import traceback
+        print("[cootvalent] MENU INSTALL FAILED -- the Cootvalent menu will not "
+              "appear. Traceback:\n" + traceback.format_exc())
 
 
 _install_menu()
