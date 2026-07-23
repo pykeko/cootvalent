@@ -246,13 +246,36 @@ def ligand_blind_find(smiles, name="LIG", imol_prot=None,
 
 
 # ---------------- GUI wiring: "Cootvalent" menu ----------------
-def _install_menu():
+def _gui_fn(name):
+    """Resolve a Coot GUI helper by name without importing coot_gui (which
+    re-executes and raises in bandicoot -- see covalent-link.py for details)."""
+    import sys
+    srcs = [globals()]
     try:
-        import coot_gui
-    except Exception as e:
-        print("[cootvalent] coot_gui unavailable (no-graphics?); "
-              "ligand_from_smiles()/ligand_blind_find() still callable "
-              "directly:", e)
+        import __main__
+        srcs.append(vars(__main__))
+    except Exception:
+        pass
+    import builtins
+    srcs.append(vars(builtins))
+    cg = sys.modules.get("coot_gui")
+    if cg is not None:
+        srcs.append(vars(cg))
+    for s in srcs:
+        f = s.get(name)
+        if f is not None:
+            return f
+    return None
+
+
+def _install_menu():
+    mbm = _gui_fn("coot_menubar_menu")
+    asm = _gui_fn("add_simple_coot_menu_menuitem")
+    gse = _gui_fn("generic_single_entry")
+    gde = _gui_fn("generic_double_entry")
+    if not (mbm and asm and gse and gde):
+        print("[cootvalent] GUI menu API not found (no-graphics?); "
+              "ligand_from_smiles()/ligand_blind_find() still callable directly.")
         return
 
     # ---- mode 1: place-at-pointer + jiggle-fit ----
@@ -265,7 +288,7 @@ def _install_menu():
         ligand_from_smiles(smi, nm)
 
     def _activate_place(*args):
-        coot_gui.generic_single_entry(
+        gse(
             "SMILES  (optionally:  SMILES 3-letter-name)",
             "CCO", "Build + Fit", _go_place)
 
@@ -294,21 +317,22 @@ def _install_menu():
         # generic_double_entry(label1, label2, default1, default2,
         #                      check_button_label, check_fn, go_label, go_fn)
         # go_fn is called with (entry1_text, entry2_text).
-        coot_gui.generic_double_entry(
+        gde(
             "SMILES  (optionally:  SMILES 3-letter-name)",
             "Cluster sigma level (default 1.0; lower for weak density)",
             "CCO", "1.0",
             False, False,          # no check button
             "Find in density", _go_blind)
 
-    menu = coot_gui.coot_menubar_menu("Cootvalent")
-    coot_gui.add_simple_coot_menu_menuitem(menu, "Ligand from SMILES...",
-                                           _activate_place)
-    coot_gui.add_simple_coot_menu_menuitem(menu,
-                                           "Find in density (blind search)...",
-                                           _activate_blind)
-    print("[cootvalent] 'Ligand from SMILES...' + 'Find in density (blind "
-          "search)...' added to the Cootvalent menu.")
+    try:
+        menu = mbm("Cootvalent")
+        asm(menu, "Ligand from SMILES...", _activate_place)
+        asm(menu, "Find in density (blind search)...", _activate_blind)
+        print("[cootvalent] OK: 'Ligand from SMILES...' + 'Find in density "
+              "(blind search)...' added to the Cootvalent menu.")
+    except Exception:
+        import traceback
+        print("[cootvalent] smiles MENU INSTALL FAILED:\n" + traceback.format_exc())
 
 
 _install_menu()

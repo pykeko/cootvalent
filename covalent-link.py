@@ -47,6 +47,34 @@ CCP4_PYTHON = "/Applications/ccp4-9/bin/ccp4-python"       # has gemmi (NCS step
 REFMAC_WRAPPER = os.path.expanduser("~/xtal/refmac.sh")   # legacy default
 
 
+def _gui_fn(name):
+    """Resolve a Coot GUI helper (coot_menubar_menu, add_simple_coot_menu_menuitem,
+    generic_single_entry, generic_double_entry) by name.
+
+    Do NOT `import coot_gui`: in bandicoot that re-executes coot_gui.py, which
+    references startup-only injected globals (e.g. set_found_coot_python_gui)
+    and raises NameError. Coot instead exposes these helpers as names in its
+    main namespace / builtins, which is where its own extensions find them.
+    """
+    import sys
+    srcs = [globals()]
+    try:
+        import __main__
+        srcs.append(vars(__main__))
+    except Exception:
+        pass
+    import builtins
+    srcs.append(vars(builtins))
+    cg = sys.modules.get("coot_gui")   # if already loaded cleanly at startup
+    if cg is not None:
+        srcs.append(vars(cg))
+    for s in srcs:
+        f = s.get(name)
+        if f is not None:
+            return f
+    return None
+
+
 def _find_refmac_wrapper():
     """Locate the refmac.sh wrapper: env override, ~/bin, ~/xtal, then PATH."""
     cands = [os.environ.get("COOTVALENT_REFMAC_SH"),
@@ -1186,11 +1214,13 @@ def propagate_covalent_ncs(imol, lig_cid, cys_resno, family="F2",
 # GUI wiring: "Cootvalent" menu -> "Declare covalent link..."
 # ---------------------------------------------------------------------------
 def _install_menu():
-    try:
-        import coot_gui
-    except Exception as e:
-        print("[cootvalent] coot_gui unavailable (no-graphics?); "
-              "declare_covalent_link() still callable directly:", e)
+    mbm = _gui_fn("coot_menubar_menu")
+    asm = _gui_fn("add_simple_coot_menu_menuitem")
+    gde = _gui_fn("generic_double_entry")
+    if not (mbm and asm and gde):
+        print("[cootvalent] GUI menu API not found (no-graphics?); "
+              "declare_covalent_link()/propagate_covalent_ncs() still callable "
+              "directly from the console.")
         return
 
     def _go(sg_cid, warhead_cid):
@@ -1215,7 +1245,7 @@ def _install_menu():
             coot.info_dialog("Declare covalent link failed:\n\n%s" % e)
 
     def _activate(*args):
-        coot_gui.generic_double_entry(
+        gde(
             "Cys SG CID   (e.g. //A/481(CYS)/SG)",
             "warhead C CID  (append F1/F2/CAA to choose family)",
             "//A/481(CYS)/SG", "//A/701(LIG)/CAA F1",
@@ -1252,27 +1282,13 @@ def _install_menu():
             coot.info_dialog("NCS propagation failed:\n\n%s" % e)
 
     def _activate_prop(*args):
-        coot_gui.generic_double_entry(
+        gde(
             "Reference ligand CID   (e.g. //A/601(LIG))",
             "Cys resno [+ family]   (e.g. 547 F2)",
             "//A/601(LIG)", "547 F2",
             False, False,
             "Propagate", _go_prop)
 
-    # Resolve the menu API. Bandicoot injects coot_menubar_menu /
-    # add_simple_coot_menu_menuitem as startup globals (see a_rapper_gui.py);
-    # they are also attributes of coot_gui. Prefer the module attrs, fall back
-    # to the injected globals via __main__.
-    mbm = getattr(coot_gui, "coot_menubar_menu", None)
-    asm = getattr(coot_gui, "add_simple_coot_menu_menuitem", None)
-    if mbm is None or asm is None:
-        try:
-            import __main__
-            mbm = mbm or getattr(__main__, "coot_menubar_menu")
-            asm = asm or getattr(__main__, "add_simple_coot_menu_menuitem")
-        except Exception as e:
-            print("[cootvalent] menu API unavailable (no-graphics?):", e)
-            return
     # Create the menu LOUDLY -- a swallowed exception here is why a menu can
     # silently fail to appear; print the real traceback so it's diagnosable.
     try:

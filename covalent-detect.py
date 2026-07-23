@@ -696,12 +696,35 @@ def auto_detect_and_declare(imol=None, ligand=None, mtz=None, lig_dict=None,
     return det
 
 
-def _pkd_install_menu():
+def _gui_fn(name):
+    """Resolve a Coot GUI helper by name without importing coot_gui (which
+    re-executes and raises in bandicoot -- see covalent-link.py for details)."""
+    import sys
+    srcs = [globals()]
     try:
-        import coot_gui
-    except Exception as e:
-        print("[cootvalent] detect: coot_gui unavailable (no-graphics?); "
-              "detect_covalent_link() still callable directly:", e)
+        import __main__
+        srcs.append(vars(__main__))
+    except Exception:
+        pass
+    import builtins
+    srcs.append(vars(builtins))
+    cg = sys.modules.get("coot_gui")
+    if cg is not None:
+        srcs.append(vars(cg))
+    for s in srcs:
+        f = s.get(name)
+        if f is not None:
+            return f
+    return None
+
+
+def _pkd_install_menu():
+    mbm = _gui_fn("coot_menubar_menu")
+    asm = _gui_fn("add_simple_coot_menu_menuitem")
+    gse = _gui_fn("generic_single_entry")
+    if not (mbm and asm and gse):
+        print("[cootvalent] detect: GUI menu API not found (no-graphics?); "
+              "detect_covalent_link() still callable directly.")
         return
 
     def _go(ligand_text):
@@ -744,16 +767,19 @@ def _pkd_install_menu():
             coot.info_dialog(msg + "Detect OK, but declare failed:\n\n%s" % e)
 
     def _activate(*args):
-        coot_gui.generic_single_entry(
+        gse(
             "Ligand comp id or CID (blank = scan all ligands), "
             "e.g. 8E8 or //A/701",
             "", "Auto-detect + declare", _go)
 
-    menu = coot_gui.coot_menubar_menu("Cootvalent")
-    coot_gui.add_simple_coot_menu_menuitem(
-        menu, "Auto-detect + declare covalent link", _activate)
-    print("[cootvalent] 'Auto-detect + declare covalent link' added to the "
-          "Cootvalent menu.")
+    try:
+        menu = mbm("Cootvalent")
+        asm(menu, "Auto-detect + declare covalent link", _activate)
+        print("[cootvalent] OK: 'Auto-detect + declare covalent link' added to "
+              "the Cootvalent menu.")
+    except Exception:
+        import traceback
+        print("[cootvalent] detect MENU INSTALL FAILED:\n" + traceback.format_exc())
 
 
 _pkd_install_menu()
