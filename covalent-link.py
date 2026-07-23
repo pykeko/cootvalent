@@ -40,10 +40,26 @@
 #
 # Requires CCP4 (refmac5) for the refine step.  ASCII-only.  2026-07-16.
 
-import os, re, subprocess, tempfile, math, coot
+import os, re, subprocess, tempfile, math, json, coot
 
 CCP4_SETUP = "/Applications/ccp4-9/bin/ccp4.setup-sh"
-REFMAC_WRAPPER = os.path.expanduser("~/xtal/refmac.sh")   # optional convenience
+CCP4_PYTHON = "/Applications/ccp4-9/bin/ccp4-python"       # has gemmi (NCS step)
+REFMAC_WRAPPER = os.path.expanduser("~/xtal/refmac.sh")   # legacy default
+
+
+def _find_refmac_wrapper():
+    """Locate the refmac.sh wrapper: env override, ~/bin, ~/xtal, then PATH."""
+    cands = [os.environ.get("COOTVALENT_REFMAC_SH"),
+             os.path.expanduser("~/bin/refmac.sh"),
+             REFMAC_WRAPPER]
+    for c in cands:
+        if c and os.path.exists(c):
+            return c
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        p = os.path.join(d, "refmac.sh")
+        if os.path.exists(p):
+            return p
+    return None
 
 # ---------------------------------------------------------------------------
 # Warhead family registry.  Each family carries the canonical S-Cbeta target
@@ -540,7 +556,8 @@ def rename_comp_in_dict(dict_in, dict_out, old_comp, new_comp):
 # ---------------------------------------------------------------------------
 def declare_covalent_link(imol, sg_cid, warhead_cid, family="F1",
                           mtz=None, lig_dict=None, workdir=None,
-                          ncyc=10, do_refine=True):
+                          ncyc=10, do_refine=True,
+                          use_wrapper=False, add_waters=False):
     """Declare a Cys-warhead covalent link on molecule imol.
 
     sg_cid, warhead_cid : CID strings //CHAIN/RESNO(RESNAME)/ATOM
@@ -627,10 +644,15 @@ def declare_covalent_link(imol, sg_cid, warhead_cid, family="F1",
     print("[cootvalent]   augmented PDB: %s" % aug_pdb)
     print("[cootvalent]   link CIF     : %s" % link_cif)
 
-    # 6) refine with external refmac5
+    # 6) refine with external refmac5 (inline) or the refmac.sh wrapper (+waters)
     if do_refine and mtz:
-        rp, rm, sgc = refmac_refine(aug_pdb, mtz, link_cif, lig_dict,
-                                    sg, wh, wd, ncyc=ncyc)
+        if use_wrapper:
+            rp, rm, sgc = refmac_refine_via_wrapper(
+                aug_pdb, mtz, link_cif, lig_dict, sg, wh, wd,
+                ncyc=ncyc, add_waters=add_waters)
+        else:
+            rp, rm, sgc = refmac_refine(aug_pdb, mtz, link_cif, lig_dict,
+                                        sg, wh, wd, ncyc=ncyc)
         result["refined_pdb"] = rp
         result["refined_mtz"] = rm
         result["sg_c_refined"] = sgc
@@ -770,6 +792,396 @@ def _guess_labin(mtz):
 
 
 # ---------------------------------------------------------------------------
+# Refine via the refmac.sh wrapper (adds automatic water picking with -W and
+# the wrapper's tested keyword set) instead of the inline refmac5 call.
+# Falls back to the inline path if the wrapper isn't found.
+# ---------------------------------------------------------------------------
+def refmac_refine_via_wrapper(pdb, mtz, link_cif, lig_dict, sg, wh, wd,
+                              ncyc=10, add_waters=False, wrapper=None):
+    """Merge link CIF + ligand dict into one LIBIN and drive refmac.sh."""
+    wrapper = wrapper or _find_refmac_wrapper()
+    if not wrapper:
+        print("[cootvalent] refmac.sh not found (set COOTVALENT_REFMAC_SH); "
+              "using inline refmac5.")
+        return refmac_refine(pdb, mtz, link_cif, lig_dict, sg, wh, wd, ncyc=ncyc)
+
+    libin = os.path.join(wd, "libin.cif")
+    parts = [open(link_cif).read()]
+    if lig_dict and os.path.exists(lig_dict):
+        parts.append(open(lig_dict).read())
+    open(libin, "w").write("\n\n".join(parts) + "\n")
+
+    out_base = os.path.join(wd, "refined_cov")
+    out_pdb, out_mtz = out_base + ".pdb", out_base + ".mtz"
+    log = os.path.join(wd, "refmac_wrapper.log")
+    cmd = [wrapper, pdb, mtz, libin, "-o", out_base, "-c", str(ncyc),
+           "-L", _guess_labin(mtz)]
+    if add_waters:
+        cmd.append("-W")
+    # MAKE NEWLIGAND NOEXIT: accept a renamed/non-library ligand id (post-Michael
+    # dict) without bailing -- same reason as the inline path.
+    cmd += ["--", "MAKE NEWLIGAND NOEXIT"]
+    coot.add_status_bar_text("Running refmac.sh (%d cyc%s)..."
+                             % (ncyc, ", +waters" if add_waters else ""))
+    with open(log, "w") as lf:
+        rc = subprocess.call(cmd, stdout=lf, stderr=subprocess.STDOUT)
+    if rc != 0 or not os.path.exists(out_pdb):
+        tail = ""
+        try:
+            tail = open(log).read()[-1500:]
+        except Exception:
+            pass
+        print("[cootvalent] refmac.sh FAILED (rc=%d)\n%s" % (rc, tail))
+        return None, None, None
+
+    sga = _residue_atoms(out_pdb, sg["chain"], sg["resno"], sg["resname"])
+    wha = _residue_atoms(out_pdb, wh["chain"], wh["resno"], wh["resname"])
+    a = _find_atom(sga, sg["atom"]); b = _find_atom(wha, wh["atom"])
+    d = _dist(a, b) if (a and b) else None
+    print("[cootvalent] refmac.sh done -> %s" % out_pdb)
+    if d is not None:
+        print("[cootvalent]   refined SG-%s distance: %.3f A" % (wh["atom"], d))
+    try:
+        coot.read_pdb(out_pdb)
+        coot.make_and_draw_map(out_mtz, "FWT", "PHWT", "", 0, 0)
+    except Exception as e:
+        print("[cootvalent]   (load-back skipped:", e, ")")
+    return out_pdb, out_mtz, d
+
+
+# ---------------------------------------------------------------------------
+# NCS propagation: given one built+placed covalent ligand (the reference copy),
+# place symmetry-equivalent copies at the same Cys in every other protein chain
+# of the ASU, by superposing the reference chain onto each target chain and
+# applying that transform to the ligand.  Deterministic geometry (gemmi via
+# ccp4-python) -- but each copy should still be eyeballed against its density.
+# ---------------------------------------------------------------------------
+def _parse_res_cid(cid):
+    """Parse a residue CID //CHAIN/RESNO(RESNAME)[/ATOM]; atom optional."""
+    parts = [p for p in (cid or "").split("/") if p != ""]
+    if parts and parts[0].isdigit():
+        parts = parts[1:]
+    if len(parts) < 2:
+        raise ValueError("cannot parse residue CID '%s'" % cid)
+    d = {"chain": parts[0], "resname": "", "atom": None}
+    m = re.match(r"^(-?\d+)\s*\(([^)]+)\)\s*$", parts[1])
+    if m:
+        d["resno"] = int(m.group(1)); d["resname"] = m.group(2).strip()
+    else:
+        d["resno"] = int(re.sub(r"[^\-\d]", "", parts[1]))
+    if len(parts) >= 3:
+        d["atom"] = parts[2]
+    return d
+
+
+def _cys_sg_by_chain(pdb, resno, cys_atom="SG"):
+    """Return {chain: (x,y,z)} for every CYS <resno> SG in the model."""
+    out = {}
+    for line in open(pdb):
+        if not line.startswith(("ATOM", "HETATM")):
+            continue
+        if line[17:20].strip() != "CYS":
+            continue
+        try:
+            if int(line[22:26]) != resno:
+                continue
+        except ValueError:
+            continue
+        if line[12:16].strip() != cys_atom:
+            continue
+        out[line[21]] = (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+    return out
+
+
+def _resno_used(pdb, chain, resno):
+    for line in open(pdb):
+        if line.startswith(("ATOM", "HETATM")) and line[21] == chain:
+            try:
+                if int(line[22:26]) == resno:
+                    return True
+            except ValueError:
+                pass
+    return False
+
+
+# gemmi worker (runs under ccp4-python): superpose ref chain -> each target
+# chain and write the transformed ligand copies into one PDB.
+_NCS_WORKER_SRC = r'''
+import sys, json, gemmi
+job = json.load(sys.stdin)
+st = gemmi.read_structure(job["model"])
+model = st[0]
+
+def get_chain(name):
+    for ch in model:
+        if ch.name == name:
+            return ch
+    return None
+
+def ca_positions(ch):
+    d = {}
+    for res in ch:
+        for at in res:
+            if at.name == "CA":
+                d[res.seqid.num] = at.pos
+                break
+    return d
+
+def find_res(ch, resno, resname):
+    for res in ch:
+        if res.seqid.num == resno and (not resname or res.name == resname):
+            return res
+    return None
+
+ref = get_chain(job["ref_chain"])
+ligch = get_chain(job["lig_chain"])
+if ref is None or ligch is None:
+    print(json.dumps({"error": "ref/lig chain not found"})); sys.exit(0)
+lig = find_res(ligch, job["lig_resno"], job.get("lig_resname", ""))
+if lig is None:
+    print(json.dumps({"error": "ligand residue not found"})); sys.exit(0)
+
+refca = ca_positions(ref)
+center = job["cys_resno"]; window = job.get("window", 0)
+out_st = gemmi.Structure()
+out_st.cell = st.cell
+out_st.spacegroup_hm = st.spacegroup_hm
+om = gemmi.Model("1")
+report = []
+
+for tgt in job["targets"]:
+    tch = get_chain(tgt["tgt_chain"])
+    if tch is None:
+        report.append({"tgt_chain": tgt["tgt_chain"], "error": "chain missing"}); continue
+    tgtca = ca_positions(tch)
+    def pairs(win):
+        fx = []; mv = []
+        for num, pos in refca.items():
+            if win and abs(num - center) > win:
+                continue
+            if num in tgtca:
+                mv.append(pos); fx.append(tgtca[num])
+        return fx, mv
+    fx, mv = pairs(window)
+    if len(fx) < 3:
+        fx, mv = pairs(0)   # fall back to all matched CA
+    if len(fx) < 3:
+        report.append({"tgt_chain": tgt["tgt_chain"],
+                       "error": "too few matched CA (%d)" % len(fx)}); continue
+    sup = gemmi.superpose_positions(fx, mv)   # maps mv (ref) -> fx (target)
+    T = sup.transform
+    ch = gemmi.Chain(tgt["new_chain"])
+    nres = gemmi.Residue()
+    nres.name = lig.name
+    nres.seqid = gemmi.SeqId(tgt["new_resno"], " ")
+    nres.het_flag = "H"
+    for at in lig:
+        v = T.apply(at.pos)
+        na = gemmi.Atom()
+        na.name = at.name; na.element = at.element
+        na.pos = gemmi.Position(v.x, v.y, v.z)
+        na.occ = at.occ; na.b_iso = at.b_iso; na.altloc = at.altloc
+        nres.add_atom(na)
+    ch.add_residue(nres)
+    om.add_chain(ch)
+    report.append({"tgt_chain": tgt["tgt_chain"], "new_chain": tgt["new_chain"],
+                   "new_resno": tgt["new_resno"], "rmsd": round(sup.rmsd, 3),
+                   "n_ca": len(fx)})
+
+out_st.add_model(om)
+out_st.write_pdb(job["out_pdb"])
+print(json.dumps({"copies": report}))
+'''
+
+
+def _run_ncs_worker(job):
+    """Run the gemmi superposition worker under ccp4-python; return its JSON."""
+    src = os.path.join(job["_wd"], "ncs_worker.py")
+    open(src, "w").write(_NCS_WORKER_SRC)
+    cmd = ('. "%s" >/dev/null 2>&1; exec "%s" "%s"'
+           % (CCP4_SETUP, CCP4_PYTHON, src))
+    p = subprocess.Popen(["bash", "-c", cmd], stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate(json.dumps(job).encode("utf-8"), timeout=120)
+    try:
+        return json.loads(out.decode("utf-8", "ignore").strip().splitlines()[-1])
+    except Exception:
+        return {"error": "worker failed: %s" % err.decode("utf-8", "ignore")[-500:]}
+
+
+def _hetatm_lines(pdb):
+    return [l for l in open(pdb).read().splitlines()
+            if l.startswith(("ATOM", "HETATM"))]
+
+
+def propagate_covalent_ncs(imol, lig_cid, cys_resno, family="F2",
+                           target_chains=None, ref_chain=None, window=15,
+                           warhead_atom=None, cys_atom="SG",
+                           mtz=None, lig_dict=None, workdir=None, ncyc=10,
+                           do_refine=False, add_waters=False, use_wrapper=True):
+    """Propagate a built covalent ligand to the same Cys in every ASU chain.
+
+    lig_cid   : residue CID of the reference (already placed) ligand,
+                e.g. //A/601(LIG)
+    cys_resno : the reacting Cys residue number (same in every chain)
+    Returns a dict with the augmented PDB, per-copy report, and (if refined)
+    the refined model paths.
+    """
+    if family not in FAMILIES:
+        raise ValueError("unknown family '%s'" % family)
+    wd = workdir or tempfile.mkdtemp(prefix="pk_ncs_")
+    src_pdb = os.path.join(wd, "model_src.pdb")
+    coot.write_pdb_file(imol, src_pdb)
+
+    lig = _parse_res_cid(lig_cid)
+    if not lig["resname"]:
+        lig["resname"] = _res_name(src_pdb, lig)
+    lig_atoms = _residue_atoms(src_pdb, lig["chain"], lig["resno"], lig["resname"])
+    if not lig_atoms:
+        raise RuntimeError("reference ligand %s/%d not found"
+                           % (lig["chain"], lig["resno"]))
+
+    sg_by_chain = _cys_sg_by_chain(src_pdb, cys_resno, cys_atom)
+    if not sg_by_chain:
+        raise RuntimeError("no CYS %d /%s found in any chain" % (cys_resno, cys_atom))
+
+    # warhead atom: given, else the ligand heavy atom closest to any SG
+    if warhead_atom is None:
+        best = None
+        for a in lig_atoms:
+            if a[1] == "H" or a[0].startswith("H"):
+                continue
+            for sgxyz in sg_by_chain.values():
+                d = math.sqrt(sum((a[2 + i] - sgxyz[i]) ** 2 for i in range(3)))
+                if best is None or d < best[1]:
+                    best = (a[0], d)
+        if best is None:
+            raise RuntimeError("could not infer warhead atom; pass warhead_atom=")
+        warhead_atom = best[0]
+        print("[cootvalent] inferred warhead atom = %s (%.2f A from an SG)"
+              % (warhead_atom, best[1]))
+
+    # reference chain = CYS chain whose SG is closest to the reference warhead
+    wa = _find_atom(lig_atoms, warhead_atom)
+    if ref_chain is None:
+        ref_chain = min(sg_by_chain,
+                        key=lambda c: math.sqrt(sum((wa[2 + i] - sg_by_chain[c][i]) ** 2
+                                                    for i in range(3))))
+    # targets = every other CYS-bearing chain (or the user's subset)
+    tgts = target_chains or [c for c in sorted(sg_by_chain) if c != ref_chain]
+    tgts = [c for c in tgts if c != ref_chain and c in sg_by_chain]
+    if not tgts:
+        print("[cootvalent] no other CYS %d chains to propagate to "
+              "(chains seen: %s)" % (cys_resno, ",".join(sorted(sg_by_chain))))
+
+    # assign a free residue number per target copy (reuse lig resno if free)
+    targets = []
+    for c in tgts:
+        rn = lig["resno"]
+        while _resno_used(src_pdb, c, rn):
+            rn += 1
+        targets.append({"tgt_chain": c, "new_chain": c, "new_resno": rn})
+
+    copies_pdb = os.path.join(wd, "copies.pdb")
+    report = {"copies": []}
+    if targets:
+        job = {"_wd": wd, "model": src_pdb, "ref_chain": ref_chain,
+               "lig_chain": lig["chain"], "lig_resno": lig["resno"],
+               "lig_resname": lig["resname"], "cys_resno": cys_resno,
+               "window": window, "targets": targets, "out_pdb": copies_pdb}
+        report = _run_ncs_worker(job)
+        if "error" in report:
+            raise RuntimeError("NCS worker: %s" % report["error"])
+
+    # augmented model: src + propagated ligand copies + LINK records for ALL
+    # copies (reference + propagated) so the model is self-consistent.
+    link_id = FAMILIES[family]["link_id"]
+    src_lines = open(src_pdb).read().splitlines()
+    add_lines = _hetatm_lines(copies_pdb) if (targets and os.path.exists(copies_pdb)) else []
+
+    link_lines = []
+    made = []
+    # reference copy
+    made.append((ref_chain, lig["chain"], lig["resno"]))
+    for cp in report.get("copies", []):
+        if "new_chain" in cp:
+            made.append((cp["tgt_chain"], cp["new_chain"], cp["new_resno"]))
+    for cys_ch, lc, lr in made:
+        sg = {"chain": cys_ch, "resno": cys_resno, "resname": "CYS", "atom": cys_atom}
+        wh = {"chain": lc, "resno": lr, "resname": lig["resname"], "atom": warhead_atom}
+        link_lines.append(_link_record(sg, wh, link_id))
+
+    aug_pdb = os.path.join(wd, "model_ncs_augmented.pdb")
+    out = []
+    inserted = False
+    for l in src_lines:
+        if not inserted and l.startswith(("ATOM", "HETATM")):
+            out.extend(link_lines); inserted = True
+        # drop END / stale MASTER checksum so copies append cleanly (refmac
+        # recomputes MASTER); everything else (TER/CONECT/anisou) is kept.
+        if l.startswith(("END", "MASTER")):
+            continue
+        out.append(l)
+    if not inserted:
+        out = link_lines + out
+    out.extend(add_lines)
+    out.append("END")
+    open(aug_pdb, "w").write("\n".join(out) + "\n")
+
+    print("[cootvalent] NCS propagation: reference Cys chain %s, ligand %s/%d"
+          % (ref_chain, lig["chain"], lig["resno"]))
+    for cp in report.get("copies", []):
+        if "new_chain" in cp:
+            print("[cootvalent]   -> chain %s: ligand %s/%d  (CA superpose rmsd %.3f A, %d CA)"
+                  % (cp["tgt_chain"], cp["new_chain"], cp["new_resno"],
+                     cp.get("rmsd", -1), cp.get("n_ca", 0)))
+        else:
+            print("[cootvalent]   -> chain %s: SKIPPED (%s)"
+                  % (cp.get("tgt_chain", "?"), cp.get("error", "?")))
+    print("[cootvalent]   augmented PDB: %s   (%d covalent copies)"
+          % (aug_pdb, len(made)))
+
+    result = {"augmented_pdb": aug_pdb, "link_id": link_id, "family": family,
+              "warhead_atom": warhead_atom, "ref_chain": ref_chain,
+              "copies": report.get("copies", []), "n_copies": len(made),
+              "refined_pdb": None, "refined_mtz": None}
+
+    try:
+        coot.read_pdb(aug_pdb)
+    except Exception as e:
+        print("[cootvalent]   (load-back skipped:", e, ")")
+
+    if do_refine and mtz:
+        # one link CIF + one ligand monomer dict cover every copy (same comp id).
+        # Build the link geometry the same way declare_covalent_link does.
+        nbrs = _neighbours(lig_atoms, warhead_atom)
+        carbons = [n for n in nbrs if n[0][0] in "Cc"]
+        ca = carbons[0][0] if carbons else None
+        cg = carbons[1][0] if len(carbons) >= 2 else None
+        dict_path = lig_dict or _monomer_lib_path(lig["resname"])
+        pre_form, cb_h_del, ca_h_add = _analyse_ligand_dict(
+            dict_path, warhead_atom, ca, family)
+        link_cif = os.path.join(wd, "link.cif")
+        open(link_cif, "w").write(
+            _build_link_cif(family, lig["resname"], warhead_atom, ca=ca, cg=cg,
+                            pre_form=pre_form, cb_h_to_delete=cb_h_del,
+                            ca_h_to_add=ca_h_add))
+        sg0 = {"chain": ref_chain, "resno": cys_resno, "resname": "CYS", "atom": cys_atom}
+        wh0 = {"chain": lig["chain"], "resno": lig["resno"],
+               "resname": lig["resname"], "atom": warhead_atom}
+        if use_wrapper:
+            rp, rm, _ = refmac_refine_via_wrapper(
+                aug_pdb, mtz, link_cif, lig_dict, sg0, wh0, wd,
+                ncyc=ncyc, add_waters=add_waters)
+        else:
+            rp, rm, _ = refmac_refine(
+                aug_pdb, mtz, link_cif, lig_dict, sg0, wh0, wd, ncyc=ncyc)
+        result["refined_pdb"] = rp
+        result["refined_mtz"] = rm
+    return result
+
+
+# ---------------------------------------------------------------------------
 # GUI wiring: "Cootvalent" menu -> "Declare covalent link..."
 # ---------------------------------------------------------------------------
 def _install_menu():
@@ -809,9 +1221,49 @@ def _install_menu():
             False, False,
             "Declare", _go)
 
+    # ---- NCS propagation menu item ----
+    def _go_prop(lig_cid, spec):
+        # spec = "<cys_resno> [F1|F2|CAA]", e.g. "547 F2"
+        toks = (spec or "").split()
+        if not toks:
+            coot.info_dialog("Enter the Cys residue number (e.g. 547 F2)."); return
+        try:
+            cys_resno = int(re.sub(r"[^\-\d]", "", toks[0]))
+        except ValueError:
+            coot.info_dialog("Could not read Cys residue number from '%s'." % spec); return
+        fam = "F2"
+        for t in toks[1:]:
+            if t.upper() in FAMILIES:
+                fam = t.upper()
+        try:
+            imol = coot.first_coords_imol()
+        except Exception:
+            imol = 0
+        try:
+            r = propagate_covalent_ncs(imol, lig_cid.strip(), cys_resno,
+                                       family=fam, do_refine=False)
+            coot.info_dialog("Propagated to %d covalent copy(ies) at Cys %d "
+                             "(family %s).\nAugmented model loaded; check each "
+                             "copy in density, then refine.\nSee console for "
+                             "per-copy superposition RMSDs.\n\n%s"
+                             % (r["n_copies"], cys_resno, fam, r["augmented_pdb"]))
+        except Exception as e:
+            coot.info_dialog("NCS propagation failed:\n\n%s" % e)
+
+    def _activate_prop(*args):
+        coot_gui.generic_double_entry(
+            "Reference ligand CID   (e.g. //A/601(LIG))",
+            "Cys resno [+ family]   (e.g. 547 F2)",
+            "//A/601(LIG)", "547 F2",
+            False, False,
+            "Propagate", _go_prop)
+
     menu = coot_gui.coot_menubar_menu("Cootvalent")
     coot_gui.add_simple_coot_menu_menuitem(menu, "Declare covalent link...", _activate)
-    print("[cootvalent] 'Declare covalent link...' added to the Cootvalent menu.")
+    coot_gui.add_simple_coot_menu_menuitem(
+        menu, "Propagate covalent ligand to NCS copies...", _activate_prop)
+    print("[cootvalent] 'Declare covalent link...' + "
+          "'Propagate covalent ligand to NCS copies...' added to the Cootvalent menu.")
 
 
 _install_menu()

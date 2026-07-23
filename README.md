@@ -25,6 +25,18 @@ here off the web stack to run in the native desktop app.
 | **Find in density (blind search)…** | native Fo−Fc cluster search over the whole map, σ knob, returns all clusters to pick |
 | **Declare covalent link…** | Cys-SG ↔ warhead-carbon: emits refmac-ready link CIF + LINK/LINKR + `_struct_conn`, spawns external refmac5 |
 | **Auto-detect + declare covalent link** | classifies the warhead family (F1–F6) and finds the two link atoms automatically, then declares |
+| **Propagate covalent ligand to NCS copies…** | takes one built+placed covalent ligand and copies it to the same Cys in every other protein chain of the ASU, by superposing the reference chain onto each target chain (gemmi via `ccp4-python`) and applying that transform; writes a LINK record per copy and loads the augmented model for you to check each in density |
+
+### Refinement: inline refmac5 or the `refmac.sh` wrapper
+
+The covalent refine step runs either the inline `refmac5` call (default) or an
+external [`refmac.sh`](https://github.com/pykeko) wrapper. Pass
+`use_wrapper=True` (and optionally `add_waters=True`) to
+`declare_covalent_link()` / `propagate_covalent_ncs()` to route through the
+wrapper, which adds automatic water picking (`findwaters`, via `-W`) after the
+covalent refinement — so the link geometry and ordered solvent come out of one
+command. The wrapper is located via `$COOTVALENT_REFMAC_SH`, then
+`~/bin/refmac.sh`, then `PATH`.
 
 `bandicoot_backend.py` is separate — an **external MCP driver** (`BandicootBackend`)
 that drives headless Coot over a socket (`eval(code)→value`). It is *not* a Coot
@@ -79,6 +91,12 @@ Full logs in [`overnight/`](overnight/).
 
 - **F4/F5/F6 detector paths** are implemented from the taxonomy but not yet
   exercised on real data (no epoxide/maleimide/ketone test set to hand).
+- **NCS propagation is a geometric starting point, not a verdict.** It places a
+  copy at every equivalent Cys assuming the pocket is NCS-conserved; occupancy
+  and even presence vary per copy (partial reaction is common), so check each
+  propagated ligand against its own density before refining. It uses `gemmi`
+  from `ccp4-python` (superposes on Cα within ±15 residues of the Cys, falling
+  back to all matched Cα).
 - **Pre-form library ligands** (a monomer dict that still carries the *unreacted*
   warhead, e.g. an alkene where the bound form is saturated) can make refmac
   prefer the wrong geometry; `covalent-link.py` renames the ligand to a
