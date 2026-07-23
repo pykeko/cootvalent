@@ -326,6 +326,10 @@ def _install_menu():
 
     try:
         menu = mbm("Cootvalent")
+        if menu is None:
+            print("[cootvalent] smiles: menubar not available now; RESTART bcoot "
+                  "to install the menu (works at startup, not from the console).")
+            return
         asm(menu, "Ligand from SMILES...", _activate_place)
         asm(menu, "Find in density (blind search)...", _activate_blind)
         print("[cootvalent] OK: 'Ligand from SMILES...' + 'Find in density "
