@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# scratch / test outputs
+*.log
+/scratch/
+/tmp/
+*_refined.pdb
+*_refined.mtz
