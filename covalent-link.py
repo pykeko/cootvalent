@@ -1117,9 +1117,10 @@ def propagate_covalent_ncs(imol, lig_cid, cys_resno, family="F2",
     for l in src_lines:
         if not inserted and l.startswith(("ATOM", "HETATM")):
             out.extend(link_lines); inserted = True
-        # drop END / stale MASTER checksum so copies append cleanly (refmac
-        # recomputes MASTER); everything else (TER/CONECT/anisou) is kept.
-        if l.startswith(("END", "MASTER")):
+        # drop END / stale MASTER, and any pre-existing LINK/LINKR (we re-emit
+        # links for every copy above, so keeping the old ones would duplicate
+        # the reference link); TER/CONECT/anisou are kept.
+        if l.startswith(("END", "MASTER", "LINK")):
             continue
         out.append(l)
     if not inserted:
