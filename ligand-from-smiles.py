@@ -91,10 +91,19 @@ def ligand_from_smiles(smiles, name="LIG", imol_map=None, do_jiggle=True):
         coot.info_dialog("Ligand from SMILES failed:\n\n" + err)
         return -1
 
-    # place it where you are looking
+    # place it where you are looking. Don't use coot_utils.move_molecule_to_
+    # screen_centre -- in bandicoot it routes through the undefined C name
+    # is_protein_chain_p and raises. Do it with C-level calls directly.
     try:
-        import coot_utils
-        coot_utils.move_molecule_to_screen_centre(imol)
+        rcp = getattr(coot, "rotation_centre_position", None)
+        mcf = getattr(coot, "molecule_centre", None) or _gui_fn("molecule_centre")
+        tmb = getattr(coot, "translate_molecule_by", None) or _gui_fn("translate_molecule_by")
+        if rcp and mcf and tmb:
+            mc = mcf(imol)
+            tmb(imol, rcp(0) - mc[0], rcp(1) - mc[1], rcp(2) - mc[2])
+        else:
+            print("[cootvalent] move-to-centre skipped: coord API unavailable "
+                  "(ligand loaded at its built coordinates -- move it by hand).")
     except Exception as e:
         print("[cootvalent] move-to-centre skipped:", e)
 
