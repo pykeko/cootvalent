@@ -89,6 +89,68 @@ def _model_molecules():
         return [_imol()]
 
 
+def _first_map():
+    """Return a valid map molecule number, or -1."""
+    n = getattr(coot, "graphics_n_molecules", None)
+    ok = getattr(coot, "is_valid_map_molecule", None)
+    if n and ok:
+        try:
+            maps = [i for i in range(n()) if ok(i)]
+            if maps:
+                return maps[-1]   # most recently made
+        except Exception:
+            pass
+    return -1
+
+
+def cv_build_at_cys(smiles, chain, resno, name="LIG"):
+    """One-shot: build a ligand from SMILES at a given Cys and merge it into the
+    protein -- no persistent console variables needed.
+
+    Assumes the protein (and ideally its map) are already loaded. Re-derives the
+    protein molecule and map internally, centres on <chain>/<resno> SG, builds
+    the ligand there (jiggle-fit if a map is active), and merges it into the
+    protein so cv_declare()/cv_propagate() can see it. Returns nothing to
+    remember -- just adjust the fit, then call cv_propagate().
+    """
+    prot = _imol()
+    # make sure a refinement map is set (so the build can jiggle-fit)
+    sirm = getattr(coot, "set_imol_refinement_map", None)
+    irm = getattr(coot, "imol_refinement_map", None)
+    if sirm:
+        cur = irm() if irm else -1
+        if cur is None or cur < 0:
+            m = _first_map()
+            if m >= 0:
+                sirm(m)
+    # centre on the target Cys SG
+    try:
+        coot.set_go_to_atom_molecule(prot)
+        coot.set_go_to_atom_chain_residue_atom_name(chain, resno, " SG ")
+    except Exception as e:
+        _status("could not centre on %s/%d SG: %s" % (chain, resno, e))
+    # build the ligand (lands at the view centre = the Cys)
+    build = _resolve("ligand_from_smiles")
+    if build is None:
+        _status("ligand-from-smiles.py not loaded"); return
+    lig = build(smiles, name)
+    if lig is None or lig < 0:
+        _status("ligand build failed"); return
+    # merge into the protein so it's one molecule for detection
+    merge = _resolve("merge_molecules")
+    if merge is None:
+        _status("merge_molecules unavailable; ligand is mol %d, protein is mol "
+                "%d -- merge by hand (Edit > Merge Molecules)." % (lig, prot))
+        return
+    try:
+        merge([lig], prot)
+        _status("built %s and merged into protein (mol %d) at %s/%d. Adjust the "
+                "fit so the warhead sits ~1.8 A from the SG, then cv_propagate()."
+                % (name, prot, chain, resno))
+    except Exception as e:
+        _status("merge failed: %s (ligand is mol %d)" % (e, lig))
+
+
 def _detect():
     """Scan every loaded model for a covalent ligand; return the detection dict
     (with '_imol' set) for the first model that has one, else None."""
@@ -262,7 +324,7 @@ def cootvalent_bind_keys(declare=None, propagate=None, full=None):
             print("[cootvalent] could not bind %r: %s" % (key, e))
 
 
-print("[cootvalent] loaded. Console interface (safe): cv_declare(), "
-      "cv_propagate(), cv_full().")
+print("[cootvalent] loaded. Console (safe): cv_build_at_cys(smiles, chain, "
+      "resno) then cv_declare() / cv_propagate() / cv_full().")
 print("[cootvalent] keys are OFF by default on this build (native accelerators "
       "can shadow/destroy). Opt in with cootvalent_bind_keys(propagate='Control_o', ...).")
