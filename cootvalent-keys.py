@@ -7,13 +7,15 @@
 #
 #   Ctrl+L  declare covalent link (auto-detect the placed warhead + declare)
 #   Ctrl+P  propagate covalent ligand to every NCS copy of the Cys
-#   Ctrl+R  full: propagate + refine via refmac.sh (-W waters)
+#   Ctrl+U  full: propagate + refine via refmac.sh (-W waters)
+# (Ctrl+U is deliberately avoided -- Coot's native rock-view owns it; the other
+#  native Ctrl combos are W/F/B/C/M.)
 #
 # All three are INPUT-FREE: they auto-detect the ligand heavy atom sitting
 # 1.2-2.6 A from a CYS SG, so the ligand must already be built/placed near the
 # Cys (see "Ligand from SMILES" / ligand_from_smiles() in the console for that).
 #
-# Ctrl+R needs an MTZ + ligand dictionary. It guesses them from the model's
+# Ctrl+U needs an MTZ + ligand dictionary. It guesses them from the model's
 # directory (<LIGCODE>.cif or LIG.cif; the sole/newest *.mtz). Override once
 # from the console if the guess is wrong:
 #     cootvalent_set_refine(mtz="/path/data.mtz", lig_dict="/path/LIG.cif")
@@ -24,18 +26,18 @@
 import os, glob, coot
 
 DECLARABLE = ("F1", "F2", "F3", "CAA")   # classes the declare side can build
-KEY_REFINE_MTZ = None                    # Ctrl+R overrides (None => auto-guess)
+KEY_REFINE_MTZ = None                    # Ctrl+U overrides (None => auto-guess)
 KEY_REFINE_DICT = None
 
 
 def cootvalent_set_refine(mtz=None, lig_dict=None):
-    """Set the MTZ / ligand-dict that Ctrl+R uses (persists for the session)."""
+    """Set the MTZ / ligand-dict that Ctrl+U uses (persists for the session)."""
     global KEY_REFINE_MTZ, KEY_REFINE_DICT
     if mtz is not None:
         KEY_REFINE_MTZ = mtz
     if lig_dict is not None:
         KEY_REFINE_DICT = lig_dict
-    print("[cootvalent] Ctrl+R will use  mtz=%s  dict=%s"
+    print("[cootvalent] Ctrl+U will use  mtz=%s  dict=%s"
           % (KEY_REFINE_MTZ, KEY_REFINE_DICT))
 
 
@@ -182,7 +184,7 @@ def cv_key_propagate(do_refine=False):
     if do_refine:
         mtz, dic = _guess_refine_inputs(imol, det)
         if not mtz or not dic:
-            _status("Ctrl+R needs an MTZ + ligand dict; couldn't guess both. Set "
+            _status("Ctrl+U needs an MTZ + ligand dict; couldn't guess both. Set "
                     "them: cootvalent_set_refine(mtz='...', lig_dict='...'), retry.")
             return
         kwargs.update(do_refine=True, use_wrapper=True, add_waters=True,
@@ -209,10 +211,11 @@ def _install_keys():
         akb("Cootvalent: declare covalent link (auto)", "Control_l", cv_key_declare)
         akb("Cootvalent: propagate covalent ligand to NCS copies", "Control_p",
             lambda: cv_key_propagate(False))
-        akb("Cootvalent: full (propagate + refine + waters)", "Control_r",
+        akb("Cootvalent: full (propagate + refine + waters)", "Control_u",
             lambda: cv_key_propagate(True))
         print("[cootvalent] keys bound over the graphics window: "
-              "Ctrl+L declare, Ctrl+P propagate, Ctrl+R full refine.")
+              "Ctrl+L declare, Ctrl+P propagate, Ctrl+U full refine "
+              "(Ctrl+U is taken by Coot's rock-view).")
     except Exception:
         import traceback
         print("[cootvalent] key install failed:\n" + traceback.format_exc())

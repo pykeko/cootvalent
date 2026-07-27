@@ -50,10 +50,10 @@ window:
 |---|---|
 | **Ctrl+L** | declare covalent link — auto-detect the placed warhead (ligand atom 1.2–2.6 Å from a CYS SG) and declare the link |
 | **Ctrl+P** | propagate the covalent ligand to the same Cys in every NCS copy |
-| **Ctrl+R** | full: propagate **and** refine via `refmac.sh` (`-W` waters) |
+| **Ctrl+U** | full: propagate **and** refine via `refmac.sh` (`-W` waters) |
 
 These auto-detect, so the ligand must already be built/placed at the Cys
-(`ligand_from_smiles()` from the console does that). Ctrl+R guesses the MTZ +
+(`ligand_from_smiles()` from the console does that). Ctrl+U guesses the MTZ +
 ligand dict from the model's directory; override with
 `cootvalent_set_refine(mtz="…", lig_dict="…")`. On classic Coot the "Cootvalent"
 menu is added as well.
