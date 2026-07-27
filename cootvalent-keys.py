@@ -23,7 +23,64 @@
 # Load order does not matter: the callbacks resolve declare/propagate/detect at
 # key-press time, not at import.  ASCII-only.
 
-import os, glob, coot
+import os, glob, subprocess, coot
+
+CCP4_SETUP = "/Applications/ccp4-9/bin/ccp4.setup-sh"
+CCP4_PYTHON = "/Applications/ccp4-9/bin/ccp4-python"
+
+# Per-family warhead reduction: transform the UNREACTED SMILES to the covalent
+# PRODUCT form (minus the S, which the link adds), so the built ligand has the
+# correct reacted geometry (sp2/sp3) and bond order for fitting -- rather than
+# the linear alkyne/planar alkene you'd otherwise place and then have to bend.
+_REACT_RXN = {
+    # butynamide / ynamide: warhead C#C conjugated to amide -> vinyl C=C
+    "F2": "[C:1]#[C:2][C:3](=[O:4])[N:5]>>[C:1]=[C:2][C:3](=[O:4])[N:5]",
+    # acrylamide: warhead C=C conjugated to amide -> saturated C-C
+    "F1": "[C:1]=[C:2][C:3](=[O:4])[N:5]>>[C:1][C:2][C:3](=[O:4])[N:5]",
+}
+
+_REACT_WORKER = r'''
+import sys, json
+from rdkit import Chem
+from rdkit.Chem import AllChem
+job = json.load(sys.stdin)
+m = Chem.MolFromSmiles(job["smiles"])
+if m is None:
+    print(json.dumps({"error": "unparseable SMILES"})); sys.exit(0)
+r = AllChem.ReactionFromSmarts(job["rxn"])
+prods = r.RunReactants((m,))
+if not prods:
+    print(json.dumps({"error": "warhead pattern not matched"})); sys.exit(0)
+p = prods[0][0]
+try:
+    Chem.SanitizeMol(p)
+except Exception as e:
+    print(json.dumps({"error": "sanitize: %s" % e})); sys.exit(0)
+print(json.dumps({"smiles": Chem.MolToSmiles(p)}))
+'''
+
+
+def _reacted_smiles(smiles, family):
+    """Return the covalent-product SMILES for a warhead family, or (None, reason).
+    Runs RDKit under ccp4-python (Coot's own Python lacks RDKit)."""
+    rxn = _REACT_RXN.get(family)
+    if rxn is None:
+        return None, "no reaction defined for family %s" % family
+    import json as _json, tempfile
+    src = os.path.join(tempfile.gettempdir(), "cv_react_worker.py")
+    open(src, "w").write(_REACT_WORKER)
+    cmd = '. "%s" >/dev/null 2>&1; exec "%s" "%s"' % (CCP4_SETUP, CCP4_PYTHON, src)
+    try:
+        p = subprocess.Popen(["bash", "-c", cmd], stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = p.communicate(_json.dumps({"smiles": smiles, "rxn": rxn}).encode(),
+                                 timeout=120)
+        res = _json.loads(out.decode("utf-8", "ignore").strip().splitlines()[-1])
+    except Exception as e:
+        return None, "reaction subprocess failed: %s" % e
+    if res.get("error"):
+        return None, res["error"]
+    return res.get("smiles"), None
 
 DECLARABLE = ("F1", "F2", "F3", "CAA")   # classes the declare side can build
 KEY_REFINE_MTZ = None                    # Ctrl+U overrides (None => auto-guess)
@@ -114,8 +171,15 @@ def _first_map():
     return -1
 
 
-def cv_build_at_cys(smiles, chain, resno, name="LIG"):
+def cv_build_at_cys(smiles, chain, resno, name="LIG", family="F2"):
     """Build a ligand from SMILES near a given Cys, as a SEPARATE molecule.
+
+    By default builds the REACTED (covalent-product) form of the warhead for the
+    given family (F2 alkyne->vinyl, F1 acrylamide->saturated), so the placed
+    ligand already has the correct sp2/sp3 geometry and bond order for fitting
+    -- you're not fitting a linear alkyne and hoping refinement bends it. The S
+    is added later by the link (which deletes the warhead's placeholder H). Pass
+    family=None to build the unreacted SMILES verbatim.
 
     Deliberately does NOT merge into the protein: a lone ligand molecule is far
     easier to Rotate/Translate + Real Space Refine into the density, and merging
@@ -127,6 +191,15 @@ def cv_build_at_cys(smiles, chain, resno, name="LIG"):
     ~1.8 A from the SG in density. Finally:  cv_merge_ligand()  ->  cv_declare().
     Returns the ligand molecule number.
     """
+    # transform the SMILES to the reacted product form for this warhead family
+    if family:
+        rsmi, err = _reacted_smiles(smiles, family)
+        if rsmi is None:
+            _status("could not build reacted form (%s); building the SMILES as "
+                    "given. Reason: %s" % (family, err))
+        else:
+            _status("reacted %s warhead: %s" % (family, rsmi))
+            smiles = rsmi
     prot = _imol()
     # make sure a refinement map is set (so the build can jiggle-fit)
     sirm = getattr(coot, "set_imol_refinement_map", None)

@@ -268,8 +268,10 @@ def _build_link_cif(family, lig_comp, cb, ca=None, cg=None,
               "_chem_link_bond.value_dist", "_chem_link_bond.value_dist_esd"]:
         L.append(c)
     L.append("%s 1 SG    2 %-4s single %s %s" % (link_id, cb, tgt, esd))
-    if F["kind"] == "sp2" and ca:
-        # vinyl thioether: the C=C stays as part of the link (sp2 product)
+    if F["kind"] == "sp2" and ca and pre_form:
+        # vinyl thioether from a PRE-form (alkyne) monomer: the link establishes
+        # the sp2 C=C. If the monomer is already post-form (reacted, C=C in its
+        # own dict) we must NOT redeclare it here -- that double-defines the bond.
         L.append("%s 2 %-4s 2 %-4s double 1.34 0.02" % (link_id, cb, ca))
     L.append("")
     # angles
@@ -504,11 +506,21 @@ def _analyse_ligand_dict(dict_path, cb, ca, family):
                 return o
         return None
 
+    # "pre_form" = the Cb-Ca bond is still drawn in its UNREACTED order, which is
+    # family-specific: F2 ynamide is unreacted at TRIPLE (reacts to DOUBLE), F1
+    # acrylamide is unreacted at DOUBLE (reacts to SINGLE). A blanket "any
+    # double/triple => pre_form" would wrongly flag a REACTED F2 vinyl (DOUBLE)
+    # as unreacted and then double-define the bond.
     pre_form = False
     if ca:
         o = order_between(cb, ca)
-        if o in ("DOUBLE", "TRIPLE", "AROM", "AROMATIC"):
-            pre_form = True
+        kind = FAMILIES.get(family, {}).get("kind")
+        if kind == "sp2":            # F2: unreacted == triple
+            pre_form = (o == "TRIPLE")
+        elif kind == "sp3":          # F1 / CAA: unreacted == double
+            pre_form = o in ("DOUBLE", "AROM", "AROMATIC")
+        else:                        # unknown: fall back to the old heuristic
+            pre_form = o in ("DOUBLE", "TRIPLE", "AROM", "AROMATIC")
 
     # Hs on Cb / Ca
     def hs_on(c):
