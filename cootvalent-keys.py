@@ -75,19 +75,40 @@ def _norm_family(f):
     return "CAA" if f == "F3" else f
 
 
-def _detect(imol):
+def _model_molecules():
+    """All valid coordinate molecules, lowest first (falls back to first_coords)."""
+    n = getattr(coot, "graphics_n_molecules", None)
+    ok = getattr(coot, "is_valid_model_molecule", None)
+    if n is None or ok is None:
+        return [_imol()]
+    try:
+        return [i for i in range(n()) if ok(i)]
+    except Exception:
+        return [_imol()]
+
+
+def _detect():
+    """Scan every loaded model for a covalent ligand; return the detection dict
+    (with '_imol' set) for the first model that has one, else None."""
     fn = _resolve("detect_covalent_link")
     if fn is None:
         _status("covalent-detect.py not loaded"); return None
-    try:
-        det = fn(imol, None)
-    except Exception as e:
-        _status("detect error: %s" % e); return None
-    if not det or not det.get("family"):
-        _status("no covalent warhead found near a CYS SG "
-                "(build/place the ligand at the Cys first)")
-        return None
-    return det
+    cands = _model_molecules()
+    # try the active molecule first, then the rest
+    act = _imol()
+    if act in cands:
+        cands = [act] + [c for c in cands if c != act]
+    for imol in cands:
+        try:
+            det = fn(imol, None)
+        except Exception:
+            det = None
+        if det and det.get("family"):
+            det["_imol"] = imol
+            return det
+    _status("no covalent warhead found near a CYS SG in any loaded model "
+            "(build/place the ligand at the Cys first)")
+    return None
 
 
 def _declarable(det):
@@ -100,10 +121,10 @@ def _declarable(det):
 
 
 def cv_key_declare():
-    imol = _imol()
-    det = _detect(imol)
+    det = _detect()
     if det is None:
         return
+    imol = det["_imol"]
     fam = _declarable(det)
     if fam is None:
         return
@@ -147,10 +168,10 @@ def _guess_refine_inputs(imol, det):
 
 
 def cv_key_propagate(do_refine=False):
-    imol = _imol()
-    det = _detect(imol)
+    det = _detect()
     if det is None:
         return
+    imol = det["_imol"]
     fam = _declarable(det)
     if fam is None:
         return
