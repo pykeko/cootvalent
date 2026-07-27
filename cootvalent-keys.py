@@ -115,14 +115,17 @@ def _first_map():
 
 
 def cv_build_at_cys(smiles, chain, resno, name="LIG"):
-    """One-shot: build a ligand from SMILES at a given Cys and merge it into the
-    protein -- no persistent console variables needed.
+    """Build a ligand from SMILES near a given Cys, as a SEPARATE molecule.
 
-    Assumes the protein (and ideally its map) are already loaded. Re-derives the
-    protein molecule and map internally, centres on <chain>/<resno> SG, builds
-    the ligand there (jiggle-fit if a map is active), and merges it into the
-    protein so cv_declare()/cv_propagate() can see it. Returns nothing to
-    remember -- just adjust the fit, then call cv_propagate().
+    Deliberately does NOT merge into the protein: a lone ligand molecule is far
+    easier to Rotate/Translate + Real Space Refine into the density, and merging
+    before fitting piles the ligand centroid onto the SG (unphysical clashes).
+
+    Assumes the protein + map are already loaded. Sets the refinement map,
+    centres on <chain>/<resno> SG (a starting point -- the ligand lands there),
+    and builds. Then, in the GUI: drag/orient the ligand so its warhead sits
+    ~1.8 A from the SG in density. Finally:  cv_merge_ligand()  ->  cv_declare().
+    Returns the ligand molecule number.
     """
     prot = _imol()
     # make sure a refinement map is set (so the build can jiggle-fit)
@@ -134,32 +137,76 @@ def cv_build_at_cys(smiles, chain, resno, name="LIG"):
             m = _first_map()
             if m >= 0:
                 sirm(m)
-    # centre on the target Cys SG
+    # centre on the target Cys SG (starting location for the build)
     try:
         coot.set_go_to_atom_molecule(prot)
         coot.set_go_to_atom_chain_residue_atom_name(chain, resno, " SG ")
     except Exception as e:
         _status("could not centre on %s/%d SG: %s" % (chain, resno, e))
-    # build the ligand (lands at the view centre = the Cys)
     build = _resolve("ligand_from_smiles")
     if build is None:
-        _status("ligand-from-smiles.py not loaded"); return
+        _status("ligand-from-smiles.py not loaded"); return None
     lig = build(smiles, name)
     if lig is None or lig < 0:
-        _status("ligand build failed"); return
-    # merge into the protein so it's one molecule for detection
-    merge = _resolve("merge_molecules")
-    if merge is None:
-        _status("merge_molecules unavailable; ligand is mol %d, protein is mol "
-                "%d -- merge by hand (Edit > Merge Molecules)." % (lig, prot))
-        return
-    try:
-        merge([lig], prot)
-        _status("built %s and merged into protein (mol %d) at %s/%d. Adjust the "
-                "fit so the warhead sits ~1.8 A from the SG, then cv_propagate()."
-                % (name, prot, chain, resno))
-    except Exception as e:
-        _status("merge failed: %s (ligand is mol %d)" % (e, lig))
+        _status("ligand build failed"); return None
+    _status("built %s as molecule %d near %s/%d (NOT merged). Drag/orient it in "
+            "the density so the warhead is ~1.8 A from the SG, then "
+            "cv_merge_ligand() and cv_declare()." % (name, lig, chain, resno))
+    return lig
+
+
+def cv_clear_ligands(comp="LIG"):
+    """Remove ALL copies of a ligand comp id: delete matching residues from
+    protein molecules and close any lone ligand-only molecules. Use to reset
+    after piled-up/overlapping build attempts, then rebuild cleanly."""
+    import tempfile, os as _os
+    delres = _resolve("delete_residue")
+    closem = _resolve("close_molecule")
+    n_del = 0
+    n_closed = 0
+    for imol in list(_model_molecules()):
+        pdb = _os.path.join(tempfile.gettempdir(), "cv_clear_%d.pdb" % imol)
+        try:
+            coot.write_pdb_file(imol, pdb)
+        except Exception:
+            continue
+        has_protein = False
+        lig_res = set()
+        for line in open(pdb):
+            if not line.startswith(("ATOM", "HETATM")):
+                continue
+            rn = line[17:20].strip(); ch = line[21]
+            try:
+                rs = int(line[22:26])
+            except ValueError:
+                continue
+            if rn in ("ALA","GLY","SER","CYS","VAL","LEU","ILE","PRO","THR",
+                      "MET","PHE","TYR","TRP","ASP","GLU","ASN","GLN","HIS",
+                      "LYS","ARG"):
+                has_protein = True
+            if rn == comp:
+                lig_res.add((ch, rs))
+        if not lig_res:
+            continue
+        if has_protein:
+            if delres is None:
+                _status("delete_residue unavailable; remove %s from mol %d by hand"
+                        % (comp, imol)); continue
+            for (ch, rs) in sorted(lig_res):
+                try:
+                    delres(imol, ch, rs, ""); n_del += 1
+                except Exception:
+                    pass
+        else:
+            if closem is None:
+                _status("close_molecule unavailable; close mol %d by hand" % imol)
+                continue
+            try:
+                closem(imol); n_closed += 1
+            except Exception:
+                pass
+    _status("cleared %s: deleted %d residue(s) from protein(s), closed %d "
+            "ligand-only molecule(s)." % (comp, n_del, n_closed))
 
 
 def cv_merge_ligand(lig_imol=None, protein_imol=None):
