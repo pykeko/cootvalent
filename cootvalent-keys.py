@@ -235,63 +235,60 @@ def cv_merge_ligand(lig_imol=None, protein_imol=None):
         _status("merge failed: %s" % e)
 
 
-def cv_warhead_dist(cutoff=5.0):
-    """Diagnostic for 'no covalent warhead found': for every loaded model,
-    report the closest ligand-heavy-atom <-> CYS SG distances (<= cutoff A) and
-    whether the ligand and the Cys are in the SAME molecule (they must be, for
-    detection). Call with no args after cv_build_at_cys()."""
+def cv_warhead_dist(cutoff=6.0):
+    """Report the closest ligand-CARBON <-> CYS-SG distances ACROSS all loaded
+    molecules (works whether or not the ligand is merged yet), so you can check
+    the fit before merging. The nearest carbon is the warhead pick; a real
+    S-Cbond is ~1.8 A. Also notes if the winning pair spans two molecules
+    (merge with cv_merge_ligand() before cv_declare())."""
     import tempfile, os as _os, math as _math
     _skip = {"HOH", "WAT", "DOD"}
-    any_pair = False
+    sgs, cs = [], []   # pooled across every molecule; each tagged with imol
     for imol in _model_molecules():
         pdb = _os.path.join(tempfile.gettempdir(), "cv_probe_%d.pdb" % imol)
         try:
             coot.write_pdb_file(imol, pdb)
-        except Exception as e:
-            _status("mol %d: cannot write pdb (%s)" % (imol, e)); continue
-        sgs, hets = [], []
+        except Exception:
+            continue
         for line in open(pdb):
             if not line.startswith(("ATOM", "HETATM")):
                 continue
             an = line[12:16].strip(); rn = line[17:20].strip()
             ch = line[21]; el = (line[76:78].strip() or an[:1])
             try:
-                rs = int(line[22:26]); xyz = (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+                rs = int(line[22:26])
+                xyz = (float(line[30:38]), float(line[38:46]), float(line[46:54]))
             except ValueError:
                 continue
             if rn == "CYS" and an == "SG":
-                sgs.append((ch, rs, xyz))
-            elif (line.startswith("HETATM") and rn not in _skip
-                  and el == "C"):        # warhead is a CARBON
-                hets.append((rn, ch, rs, an, xyz))
-        if not sgs or not hets:
-            _status("mol %d: %d Cys-SG, %d ligand carbon(s) -- %s"
-                    % (imol, len(sgs), len(hets),
-                       "ligand and Cys not in the same molecule (merge needed)"
-                       if (sgs or hets) else "neither present"))
-            continue
-        # closest ligand-carbon <-> SG pairs (the nearest carbon is the warhead)
-        pairs = []
-        for (rn, lch, lrs, an, lxyz) in hets:
-            for (sch, srs, sxyz) in sgs:
-                d = _math.sqrt(sum((lxyz[i]-sxyz[i])**2 for i in range(3)))
-                if d <= cutoff:
-                    pairs.append((d, rn, lch, lrs, an, sch, srs))
-        pairs.sort()
-        if not pairs:
-            _status("mol %d: has Cys-SG and ligand carbons, but none within "
-                    "%.1f A (move the ligand closer)." % (imol, cutoff))
-            continue
-        any_pair = True
-        _status("mol %d closest ligand-carbon <-> SG (nearest is the warhead pick):" % imol)
-        for i, (d, rn, lch, lrs, an, sch, srs) in enumerate(pairs[:6]):
-            flag = "  <-- WARHEAD" if i == 0 else ""
-            print("   %s %s/%d %-4s  <->  CYS %s/%d SG   %.2f A%s"
-                  % (rn, lch, lrs, an, sch, srs, d, flag))
-    if not any_pair:
-        _status("No ligand carbon near any Cys SG. Either the ligand isn't "
-                "merged into the protein, or it's too far -- move it closer and "
-                "re-run cv_warhead_dist().")
+                sgs.append((imol, ch, rs, xyz))
+            elif line.startswith("HETATM") and rn not in _skip and el == "C":
+                cs.append((imol, rn, ch, rs, an, xyz))
+    if not sgs or not cs:
+        _status("need both a Cys SG and a ligand carbon loaded (found %d SG, "
+                "%d ligand C)." % (len(sgs), len(cs)))
+        return
+    pairs = []
+    for (limol, rn, lch, lrs, an, lxyz) in cs:
+        for (simol, sch, srs, sxyz) in sgs:
+            d = _math.sqrt(sum((lxyz[i]-sxyz[i])**2 for i in range(3)))
+            if d <= cutoff:
+                pairs.append((d, limol, rn, lch, lrs, an, simol, sch, srs))
+    pairs.sort()
+    if not pairs:
+        _status("no ligand carbon within %.1f A of any Cys SG -- move the "
+                "ligand closer to the SG, then re-run." % cutoff)
+        return
+    _status("closest ligand-carbon <-> Cys-SG (nearest = warhead; aim ~1.8 A):")
+    for i, (d, limol, rn, lch, lrs, an, simol, sch, srs) in enumerate(pairs[:6]):
+        tag = "  <-- WARHEAD" if i == 0 else ""
+        span = "" if limol == simol else "  [mols %d/%d]" % (limol, simol)
+        print("   %s %s/%d %-4s  <->  CYS %s/%d SG   %.2f A%s%s"
+              % (rn, lch, lrs, an, sch, srs, d, tag, span))
+    d0, limol0, _, _, _, _, simol0, _, _ = pairs[0]
+    if limol0 != simol0:
+        _status("warhead pick spans molecules %d (ligand) and %d (protein) -- "
+                "run cv_merge_ligand() before cv_declare()." % (limol0, simol0))
 
 
 def _detect():
