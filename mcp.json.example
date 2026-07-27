@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cootvalent": {
+      "command": "/opt/anaconda3/bin/python",
+      "args": [
+        "/Users/mhilgers/bin/cootvalent_mcp_server.py"
+      ],
+      "env": {
+        "COOTVALENT_MCP_DIR": "/Users/mhilgers/.cootvalent_mcp"
+      }
+    }
+  }
+}

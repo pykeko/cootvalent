@@ -65,10 +65,33 @@ If you have confirmed a key is free on your build, opt in explicitly:
 known to be grabbed natively). On classic Coot (with `coot_python`) the
 "Cootvalent" menu is added as well.
 
-`bandicoot_backend.py` is separate — an **external MCP driver** (`BandicootBackend`)
-that drives headless Coot over a socket (`eval(code)→value`). It is *not* a Coot
-extension and `install.sh` does not install it; it lives here for anyone wiring
-native Coot into an MCP control plane.
+### MCP bridge — drive a live bcoot from an agent
+
+`cootvalent-mcp-bridge.py` (in-Coot) + `cootvalent_mcp_server.py` (MCP server)
+let an MCP client (e.g. Claude Code) drive your **live GUI bcoot** directly,
+instead of pasting console lines. It uses a small JSON **file queue** polled on
+Coot's GLib main loop (`coot.bandicoot_python_timeout_add`) — non-blocking and
+GUI-safe — rather than a socket that would need a pump loop and freeze the GUI.
+
+Setup:
+1. In the bcoot Python console (once per session): `cootvalent_mcp_start()`
+2. Register the server with your MCP client. Example (`mcp.json.example`):
+   ```
+   claude mcp add cootvalent /opt/anaconda3/bin/python \
+       /Users/you/bin/cootvalent_mcp_server.py \
+       -e COOTVALENT_MCP_DIR=/Users/you/.cootvalent_mcp
+   ```
+   (the server needs an interpreter with the `mcp` SDK; the queue dir must match
+   the bridge's `$COOTVALENT_MCP_DIR`, default `~/.cootvalent_mcp`).
+
+Tools: `coot_eval`, `cv_build_at_cys`, `cv_warhead_dist`, `cv_merge_ligand`,
+`cv_declare`, `cv_propagate`, `cv_full`, `cv_clear_ligands`, `load_pdb`,
+`read_dict`, `close_all`. Note `coot_eval` runs arbitrary Python in your session
+— only register this for local, single-user use.
+
+`bandicoot_backend.py` is a separate, older **headless** driver
+(`BandicootBackend`) that spawns its own no-graphics Coot over a socket; it is
+*not* installed and is kept for anyone wiring headless Coot into an MCP plane.
 
 ## Warhead families (Cys-S covalent)
 

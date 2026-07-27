@@ -5,7 +5,7 @@ set -e
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST="$HOME/.coot-preferences"
 mkdir -p "$DEST"
-for f in ligand-from-smiles.py covalent-link.py covalent-detect.py cootvalent-keys.py; do
+for f in ligand-from-smiles.py covalent-link.py covalent-detect.py cootvalent-keys.py cootvalent-mcp-bridge.py; do
   cp "$SRC/$f" "$DEST/$f" && echo "installed  $f  ->  $DEST/"
 done
 echo
