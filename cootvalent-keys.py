@@ -201,24 +201,68 @@ def cv_key_propagate(do_refine=False):
         _status("propagate failed: %s" % e)
 
 
-def _install_keys():
+# ---------------------------------------------------------------------------
+# Console entry points (the reliable interface on bandicoot). These are bare
+# names in the shared startup namespace, so call them directly in the console.
+# ---------------------------------------------------------------------------
+def cv_declare():
+    """Auto-detect the placed warhead and declare the covalent link."""
+    return cv_key_declare()
+
+
+def cv_propagate():
+    """Declare + propagate the covalent ligand to every NCS copy."""
+    return cv_key_propagate(False)
+
+
+def cv_full():
+    """Propagate + refine via refmac.sh (-W waters)."""
+    return cv_key_propagate(True)
+
+
+# Keys are DELIBERATELY NOT bound automatically. This bandicoot build has
+# compiled-in native accelerators that intercept keys before Python (observed:
+# L = go-to-ligand, Ctrl+R = rock, Ctrl+D = DELETE), some destructive, and they
+# aren't discoverable from Python -- so auto-binding risks silent shadowing or
+# worse. Use the console functions above, or opt in explicitly to a key you
+# have confirmed is free with cootvalent_bind_keys(...).
+_KNOWN_NATIVE = {
+    "l", "L", "Control_l", "Control_r", "Control_d", "Control_w",
+    "Control_f", "Control_b", "Control_c", "Control_m", "Control_s",
+    "Control_q", "Control_z",
+}
+
+
+def cootvalent_bind_keys(declare=None, propagate=None, full=None):
+    """Opt in to key bindings, e.g.
+        cootvalent_bind_keys(propagate="Control_p", full="Control_u")
+    Only binds the keys you pass. Warns on keys known to be grabbed natively.
+    Test a candidate first (worst case a free key just does nothing):
+        add_key_binding("t", "Control_o", lambda: print("fired"))
+    """
     akb = _resolve("add_key_binding")
     if akb is None:
-        print("[cootvalent] add_key_binding unavailable (no-graphics?); "
-              "keys not bound. Console: cv_key_declare()/cv_key_propagate().")
+        print("[cootvalent] add_key_binding unavailable; use the console "
+              "functions cv_declare() / cv_propagate() / cv_full().")
         return
-    try:
-        akb("Cootvalent: declare covalent link (auto)", "Control_l", cv_key_declare)
-        akb("Cootvalent: propagate covalent ligand to NCS copies", "Control_p",
-            lambda: cv_key_propagate(False))
-        akb("Cootvalent: full (propagate + refine + waters)", "Control_u",
-            lambda: cv_key_propagate(True))
-        print("[cootvalent] keys bound over the graphics window: "
-              "Ctrl+L declare, Ctrl+P propagate, Ctrl+U full refine "
-              "(Ctrl+R is taken by Coot's rock-view).")
-    except Exception:
-        import traceback
-        print("[cootvalent] key install failed:\n" + traceback.format_exc())
+    plan = [(declare, "declare", cv_key_declare),
+            (propagate, "propagate", lambda: cv_key_propagate(False)),
+            (full, "full refine", lambda: cv_key_propagate(True))]
+    for key, label, thunk in plan:
+        if not key:
+            continue
+        if key in _KNOWN_NATIVE:
+            print("[cootvalent] refusing %r for %s -- it's grabbed by Coot "
+                  "natively (may be destructive). Pick another key." % (key, label))
+            continue
+        try:
+            akb("Cootvalent: " + label, key, thunk)
+            print("[cootvalent] bound %s -> %s" % (key, label))
+        except Exception as e:
+            print("[cootvalent] could not bind %r: %s" % (key, e))
 
 
-_install_keys()
+print("[cootvalent] loaded. Console interface (safe): cv_declare(), "
+      "cv_propagate(), cv_full().")
+print("[cootvalent] keys are OFF by default on this build (native accelerators "
+      "can shadow/destroy). Opt in with cootvalent_bind_keys(propagate='Control_o', ...).")

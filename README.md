@@ -38,25 +38,32 @@ covalent refinement — so the link geometry and ordered solvent come out of one
 command. The wrapper is located via `$COOTVALENT_REFMAC_SH`, then
 `~/bin/refmac.sh`, then `PATH`.
 
-### Key bindings (bandicoot: where menus can't be added)
+### Console interface (bandicoot: where menus/keys can't be trusted)
 
 Some bandicoot builds ship **without `coot_python`** (and with a stubbed
 `coot_toolbar_button` and invisible-stub GTK dialogs), so a menu/toolbar/input
-dialog can't be created from Python. Key bindings still work, so
-`cootvalent-keys.py` wires the **input-free** covalent actions over the graphics
-window:
+dialog can't be created from Python. They also have **compiled-in native key
+accelerators** that intercept keys before Python and are sometimes destructive
+(observed: `L` = go-to-ligand, `Ctrl+R` = rock, `Ctrl+D` = delete). So
+`cootvalent-keys.py` **does not bind any keys automatically**; the reliable,
+collision-free interface is three console functions:
 
-| Key | Action |
+| Call | Action |
 |---|---|
-| **Ctrl+L** | declare covalent link — auto-detect the placed warhead (ligand atom 1.2–2.6 Å from a CYS SG) and declare the link |
-| **Ctrl+P** | propagate the covalent ligand to the same Cys in every NCS copy |
-| **Ctrl+U** | full: propagate **and** refine via `refmac.sh` (`-W` waters) |
+| `cv_declare()` | auto-detect the placed warhead (ligand atom 1.2–2.6 Å from a CYS SG) and declare the covalent link |
+| `cv_propagate()` | declare + propagate the ligand to the same Cys in every NCS copy |
+| `cv_full()` | propagate **and** refine via `refmac.sh` (`-W` waters) |
 
-These auto-detect, so the ligand must already be built/placed at the Cys
-(`ligand_from_smiles()` from the console does that). Ctrl+U guesses the MTZ +
+These auto-detect, so the ligand must already be built/placed at the Cys and
+**merged into the protein molecule** (`ligand_from_smiles()` builds it;
+`merge_molecules([lig], protein_imol)` merges it). `cv_full()` guesses the MTZ +
 ligand dict from the model's directory; override with
-`cootvalent_set_refine(mtz="…", lig_dict="…")`. On classic Coot the "Cootvalent"
-menu is added as well.
+`cootvalent_set_refine(mtz="…", lig_dict="…")`.
+
+If you have confirmed a key is free on your build, opt in explicitly:
+`cootvalent_bind_keys(propagate="Control_o", full="Control_u")` (it refuses keys
+known to be grabbed natively). On classic Coot (with `coot_python`) the
+"Cootvalent" menu is added as well.
 
 `bandicoot_backend.py` is separate — an **external MCP driver** (`BandicootBackend`)
 that drives headless Coot over a socket (`eval(code)→value`). It is *not* a Coot
