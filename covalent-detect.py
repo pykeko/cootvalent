@@ -51,8 +51,14 @@ _MON_ROOTS = [
     "/Applications/bandicoot-0.1.4.8/share/coot/lib/data/monomers",
 ]
 
-# Covalent S-C bonding-distance window (A) used to locate the warhead carbon.
-_SC_MIN, _SC_MAX = 1.2, 2.6
+# The warhead is the ligand CARBON closest to a CYS SG (a Cys-S adduct always
+# bonds through carbon). We do NOT use a tight distance window: an unrefined
+# placement can put the C well under a bond length (or a bit over), and a hard
+# floor/ceiling wrongly rejects it. Only a generous sanity cap rules out a
+# carbon from an unrelated, far-away ligand.
+_SC_SANITY_MAX = 3.5   # A -- beyond this, not a plausible covalent contact
+# (legacy names kept for any external reference)
+_SC_MIN, _SC_MAX = 0.0, _SC_SANITY_MAX
 # Bond-length thresholds (A) separating single vs double Cb-Ca.
 _DOUBLE_MAX = 1.42     # <= this is treated as a double bond (F2 vinyl / ynamide)
 _TRIPLE_MAX = 1.27     # (informational; triple never survives in bound state)
@@ -541,12 +547,14 @@ def detect_covalent_link(imol_protein, ligand_comp_or_cid, lig_dict=None,
         heavy = [a for a in res_atoms if a["elem"] not in ("H", "D")
                  and not a["atom"].startswith("H")]
 
-        # find the warhead atom = ligand heavy atom nearest a CYS SG in-window.
+        # find the warhead atom = ligand CARBON nearest a CYS SG (no tight
+        # window; just the closest carbon, within a generous sanity cap).
+        carbons = [a for a in heavy if _canon_local(a["elem"]) == "C"]
         best = None
-        for a in heavy:
+        for a in carbons:
             for s in sgs:
                 d = _pkd_dist(a["xyz"], s["xyz"])
-                if _SC_MIN < d < _SC_MAX:
+                if d < _SC_SANITY_MAX:
                     if best is None or d < best[0]:
                         best = (d, a, s)
         if best is None:

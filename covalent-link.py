@@ -1078,18 +1078,21 @@ def propagate_covalent_ncs(imol, lig_cid, cys_resno, family="F2",
 
     # warhead atom: given, else the ligand heavy atom closest to any SG
     if warhead_atom is None:
+        # warhead = the ligand CARBON closest to any Cys SG (Cys-S adducts bond
+        # through carbon; no distance window -- just the nearest carbon).
         best = None
         for a in lig_atoms:
-            if a[1] == "H" or a[0].startswith("H"):
+            elem = (a[1] or a[0][:1]).strip()
+            if elem not in ("C", "c"):
                 continue
             for sgxyz in sg_by_chain.values():
                 d = math.sqrt(sum((a[2 + i] - sgxyz[i]) ** 2 for i in range(3)))
                 if best is None or d < best[1]:
                     best = (a[0], d)
         if best is None:
-            raise RuntimeError("could not infer warhead atom; pass warhead_atom=")
+            raise RuntimeError("could not infer warhead carbon; pass warhead_atom=")
         warhead_atom = best[0]
-        print("[cootvalent] inferred warhead atom = %s (%.2f A from an SG)"
+        print("[cootvalent] inferred warhead carbon = %s (%.2f A from an SG)"
               % (warhead_atom, best[1]))
 
     # reference chain = CYS chain whose SG is closest to the reference warhead

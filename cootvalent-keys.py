@@ -261,15 +261,16 @@ def cv_warhead_dist(cutoff=5.0):
                 continue
             if rn == "CYS" and an == "SG":
                 sgs.append((ch, rs, xyz))
-            elif line.startswith("HETATM") and rn not in _skip and el != "H" and not an.startswith("H"):
+            elif (line.startswith("HETATM") and rn not in _skip
+                  and el == "C"):        # warhead is a CARBON
                 hets.append((rn, ch, rs, an, xyz))
         if not sgs or not hets:
-            _status("mol %d: %d Cys-SG, %d ligand heavy atoms -- %s"
+            _status("mol %d: %d Cys-SG, %d ligand carbon(s) -- %s"
                     % (imol, len(sgs), len(hets),
                        "ligand and Cys not in the same molecule (merge needed)"
                        if (sgs or hets) else "neither present"))
             continue
-        # closest few pairs within cutoff
+        # closest ligand-carbon <-> SG pairs (the nearest carbon is the warhead)
         pairs = []
         for (rn, lch, lrs, an, lxyz) in hets:
             for (sch, srs, sxyz) in sgs:
@@ -278,19 +279,19 @@ def cv_warhead_dist(cutoff=5.0):
                     pairs.append((d, rn, lch, lrs, an, sch, srs))
         pairs.sort()
         if not pairs:
-            _status("mol %d: has Cys-SG and ligand, but nothing within %.1f A "
-                    "(move the warhead closer)." % (imol, cutoff))
+            _status("mol %d: has Cys-SG and ligand carbons, but none within "
+                    "%.1f A (move the ligand closer)." % (imol, cutoff))
             continue
         any_pair = True
-        _status("mol %d closest ligand<->SG (window for detection is 1.2-2.6 A):" % imol)
-        for (d, rn, lch, lrs, an, sch, srs) in pairs[:6]:
-            flag = "  <-- IN WINDOW" if 1.2 <= d <= 2.6 else ""
+        _status("mol %d closest ligand-carbon <-> SG (nearest is the warhead pick):" % imol)
+        for i, (d, rn, lch, lrs, an, sch, srs) in enumerate(pairs[:6]):
+            flag = "  <-- WARHEAD" if i == 0 else ""
             print("   %s %s/%d %-4s  <->  CYS %s/%d SG   %.2f A%s"
                   % (rn, lch, lrs, an, sch, srs, d, flag))
     if not any_pair:
-        _status("No ligand atom near any Cys SG. Either the ligand isn't merged "
-                "into the protein molecule, or it's too far -- nudge the warhead "
-                "to ~1.8 A from the SG and re-run cv_warhead_dist().")
+        _status("No ligand carbon near any Cys SG. Either the ligand isn't "
+                "merged into the protein, or it's too far -- move it closer and "
+                "re-run cv_warhead_dist().")
 
 
 def _detect():
