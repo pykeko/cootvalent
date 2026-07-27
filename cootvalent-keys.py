@@ -42,19 +42,30 @@ def cootvalent_set_refine(mtz=None, lig_dict=None):
 
 
 def _resolve(name):
-    """Find a name in the shared startup namespace (globals/__main__/builtins)."""
+    """Find a Coot/plugin function by name across every namespace it might live
+    in: this module, __main__, builtins, and the already-loaded coot modules
+    (coot_utils holds bare helpers like merge_molecules; use sys.modules so we
+    never re-import/re-exec them)."""
+    import sys
     g = globals()
     if name in g and g[name] is not None:
         return g[name]
+    srcs = []
     try:
         import __main__
-        if hasattr(__main__, name):
-            return getattr(__main__, name)
+        srcs.append(vars(__main__))
     except Exception:
         pass
     import builtins
-    if hasattr(builtins, name):
-        return getattr(builtins, name)
+    srcs.append(vars(builtins))
+    for modname in ("coot_utils", "coot_load_modules", "coot_gui", "coot"):
+        mod = sys.modules.get(modname)
+        if mod is not None:
+            srcs.append(vars(mod))
+    for s in srcs:
+        f = s.get(name)
+        if f is not None:
+            return f
     return None
 
 
@@ -149,6 +160,90 @@ def cv_build_at_cys(smiles, chain, resno, name="LIG"):
                 % (name, prot, chain, resno))
     except Exception as e:
         _status("merge failed: %s (ligand is mol %d)" % (e, lig))
+
+
+def cv_merge_ligand(lig_imol=None, protein_imol=None):
+    """Merge the built ligand molecule into the protein molecule so cv_declare()/
+    cv_propagate() can see them together. With no args, protein = first coords
+    molecule and ligand = the newest other model molecule. Call this if a build
+    left the ligand as a separate molecule."""
+    prot = protein_imol if protein_imol is not None else _imol()
+    if lig_imol is None:
+        others = [m for m in _model_molecules() if m != prot]
+        if not others:
+            _status("no separate ligand molecule to merge (only protein loaded)")
+            return
+        lig_imol = max(others)
+    merge = _resolve("merge_molecules")
+    if merge is None:
+        _status("merge_molecules not found in any namespace; merge by hand: "
+                "Edit > Merge Molecules (ligand mol %d into protein mol %d)."
+                % (lig_imol, prot))
+        return
+    try:
+        merge([lig_imol], prot)
+        _status("merged ligand mol %d into protein mol %d. Now cv_declare()."
+                % (lig_imol, prot))
+    except Exception as e:
+        _status("merge failed: %s" % e)
+
+
+def cv_warhead_dist(cutoff=5.0):
+    """Diagnostic for 'no covalent warhead found': for every loaded model,
+    report the closest ligand-heavy-atom <-> CYS SG distances (<= cutoff A) and
+    whether the ligand and the Cys are in the SAME molecule (they must be, for
+    detection). Call with no args after cv_build_at_cys()."""
+    import tempfile, os as _os, math as _math
+    _skip = {"HOH", "WAT", "DOD"}
+    any_pair = False
+    for imol in _model_molecules():
+        pdb = _os.path.join(tempfile.gettempdir(), "cv_probe_%d.pdb" % imol)
+        try:
+            coot.write_pdb_file(imol, pdb)
+        except Exception as e:
+            _status("mol %d: cannot write pdb (%s)" % (imol, e)); continue
+        sgs, hets = [], []
+        for line in open(pdb):
+            if not line.startswith(("ATOM", "HETATM")):
+                continue
+            an = line[12:16].strip(); rn = line[17:20].strip()
+            ch = line[21]; el = (line[76:78].strip() or an[:1])
+            try:
+                rs = int(line[22:26]); xyz = (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+            except ValueError:
+                continue
+            if rn == "CYS" and an == "SG":
+                sgs.append((ch, rs, xyz))
+            elif line.startswith("HETATM") and rn not in _skip and el != "H" and not an.startswith("H"):
+                hets.append((rn, ch, rs, an, xyz))
+        if not sgs or not hets:
+            _status("mol %d: %d Cys-SG, %d ligand heavy atoms -- %s"
+                    % (imol, len(sgs), len(hets),
+                       "ligand and Cys not in the same molecule (merge needed)"
+                       if (sgs or hets) else "neither present"))
+            continue
+        # closest few pairs within cutoff
+        pairs = []
+        for (rn, lch, lrs, an, lxyz) in hets:
+            for (sch, srs, sxyz) in sgs:
+                d = _math.sqrt(sum((lxyz[i]-sxyz[i])**2 for i in range(3)))
+                if d <= cutoff:
+                    pairs.append((d, rn, lch, lrs, an, sch, srs))
+        pairs.sort()
+        if not pairs:
+            _status("mol %d: has Cys-SG and ligand, but nothing within %.1f A "
+                    "(move the warhead closer)." % (imol, cutoff))
+            continue
+        any_pair = True
+        _status("mol %d closest ligand<->SG (window for detection is 1.2-2.6 A):" % imol)
+        for (d, rn, lch, lrs, an, sch, srs) in pairs[:6]:
+            flag = "  <-- IN WINDOW" if 1.2 <= d <= 2.6 else ""
+            print("   %s %s/%d %-4s  <->  CYS %s/%d SG   %.2f A%s"
+                  % (rn, lch, lrs, an, sch, srs, d, flag))
+    if not any_pair:
+        _status("No ligand atom near any Cys SG. Either the ligand isn't merged "
+                "into the protein molecule, or it's too far -- nudge the warhead "
+                "to ~1.8 A from the SG and re-run cv_warhead_dist().")
 
 
 def _detect():
