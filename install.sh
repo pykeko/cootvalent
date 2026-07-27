@@ -11,8 +11,9 @@ done
 echo
 echo "Done. Restart bcoot (or coot)."
 echo "  - Classic Coot (with coot_python): a 'Cootvalent' menu appears."
-echo "  - bandicoot (no coot_python): the menu can't be added, but key bindings"
-    work -- console: cv_declare(), cv_propagate(), cv_full()  (keys OFF by default;
-echo "    graphics window); the functions are also callable from the console."
+echo "  - bandicoot (no coot_python): use the console functions"
+echo "      cv_declare()  cv_propagate()  cv_full()"
+echo "    (keys are OFF by default -- native accelerators can shadow/destroy;"
+echo "     opt in with cootvalent_bind_keys(...) once you confirm a free key)."
 echo "(bandicoot_backend.py is a separate EXTERNAL MCP driver, not a Coot extension -- not installed here.)"
 echo "Uninstall:  rm $DEST/{ligand-from-smiles,covalent-link,covalent-detect,cootvalent-keys}.py"
