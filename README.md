@@ -38,6 +38,26 @@ covalent refinement — so the link geometry and ordered solvent come out of one
 command. The wrapper is located via `$COOTVALENT_REFMAC_SH`, then
 `~/bin/refmac.sh`, then `PATH`.
 
+### Key bindings (bandicoot: where menus can't be added)
+
+Some bandicoot builds ship **without `coot_python`** (and with a stubbed
+`coot_toolbar_button` and invisible-stub GTK dialogs), so a menu/toolbar/input
+dialog can't be created from Python. Key bindings still work, so
+`cootvalent-keys.py` wires the **input-free** covalent actions over the graphics
+window:
+
+| Key | Action |
+|---|---|
+| **Ctrl+L** | declare covalent link — auto-detect the placed warhead (ligand atom 1.2–2.6 Å from a CYS SG) and declare the link |
+| **Ctrl+P** | propagate the covalent ligand to the same Cys in every NCS copy |
+| **Ctrl+R** | full: propagate **and** refine via `refmac.sh` (`-W` waters) |
+
+These auto-detect, so the ligand must already be built/placed at the Cys
+(`ligand_from_smiles()` from the console does that). Ctrl+R guesses the MTZ +
+ligand dict from the model's directory; override with
+`cootvalent_set_refine(mtz="…", lig_dict="…")`. On classic Coot the "Cootvalent"
+menu is added as well.
+
 `bandicoot_backend.py` is separate — an **external MCP driver** (`BandicootBackend`)
 that drives headless Coot over a socket (`eval(code)→value`). It is *not* a Coot
 extension and `install.sh` does not install it; it lives here for anyone wiring

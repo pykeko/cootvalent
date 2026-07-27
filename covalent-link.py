@@ -110,6 +110,9 @@ FAMILIES = {
         "target": 1.81, "esd": 0.02, "kind": "sp3",
     },
 }
+# The auto-detector (covalent-detect.py) labels the SN2 chloro/cyano-acetamide
+# class "F3"; alias it to the CAA link builder so detect->declare works for it.
+FAMILIES["F3"] = FAMILIES["CAA"]
 
 
 # ---------------------------------------------------------------------------
