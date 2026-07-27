@@ -33,10 +33,15 @@ CCP4_PYTHON = "/Applications/ccp4-9/bin/ccp4-python"
 # correct reacted geometry (sp2/sp3) and bond order for fitting -- rather than
 # the linear alkyne/planar alkene you'd otherwise place and then have to bend.
 _REACT_RXN = {
-    # butynamide / ynamide: warhead C#C conjugated to amide -> vinyl C=C
+    # F2 butynamide / ynamide: warhead C#C conjugated to amide -> vinyl C=C
     "F2": "[C:1]#[C:2][C:3](=[O:4])[N:5]>>[C:1]=[C:2][C:3](=[O:4])[N:5]",
-    # acrylamide: warhead C=C conjugated to amide -> saturated C-C
+    # F1 acrylamide: warhead C=C conjugated to amide -> saturated C-C
     "F1": "[C:1]=[C:2][C:3](=[O:4])[N:5]>>[C:1][C:2][C:3](=[O:4])[N:5]",
+    # F3 alpha-halo-acetamide SN2 (incl. alpha-chlorofluoroacetamide, CFA): the
+    # halide leaves, the alpha carbon keeps its other substituents (e.g. F) and
+    # gains an H (the placeholder the link deletes to bond S). No order change.
+    "F3": "[Cl,Br,I][C:1][C:3](=[O:4])[N:5]>>[C:1][C:3](=[O:4])[N:5]",
+    "CAA": "[Cl,Br,I][C:1][C:3](=[O:4])[N:5]>>[C:1][C:3](=[O:4])[N:5]",
 }
 
 _REACT_WORKER = r'''

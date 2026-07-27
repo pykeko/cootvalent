@@ -95,14 +95,21 @@ Tools: `coot_eval`, `cv_build_at_cys`, `cv_warhead_dist`, `cv_merge_ligand`,
 
 ## Warhead families (Cys-S covalent)
 
-| Family | Chemistry |
-|---|---|
-| F1 | acrylamide → saturated β-thioether |
-| F2 | α,β-ynamide → vinyl thioether |
-| F3 | α-chloro/cyano-acetamide SN2 thioether |
-| F4 | epoxide → β-hydroxy thioether |
-| F5 | maleimide → 3-thiosuccinimide |
-| F6 | reversible ketone/aldehyde hemithioketal |
+| Family | Chemistry | Detect | Declare / refine | Reacted build |
+|---|---|---|---|---|
+| F1 | acrylamide → saturated β-thioether | ✅ | ✅ (validated) | ✅ C=C→C–C |
+| F2 | α,β-ynamide/butynamide → vinyl thioether | ✅ | ✅ (validated) | ✅ C≡C→C=C |
+| F3 | α-halo-acetamide SN2 thioether (incl. **α-chlorofluoroacetamide, CFA**) | ✅ | ✅ (validation pending real structure) | ✅ dehalogenate (F retained) |
+| F4 | epoxide → β-hydroxy thioether | ✅ | ❌ | — |
+| F5 | maleimide → 3-thiosuccinimide | ✅ | ❌ | — |
+| F6 | reversible ketone/aldehyde hemithioketal | ✅ | ❌ | — |
+
+**Reacted build**: `cv_build_at_cys(smiles, chain, resno, family=...)` transforms
+the unreacted SMILES to the covalent-product form for the family *before* acedrg
+(F2 alkyne→vinyl, F1 acrylamide→saturated, F3 α-halo-acetamide→dehalogenated),
+so you fit the correct sp²/sp³ geometry with the right bond order — the S is
+added later by the link, which deletes the warhead's placeholder H. Pass
+`family=None` to build the SMILES verbatim.
 
 ## Install
 
