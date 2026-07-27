@@ -8,7 +8,7 @@
 #   Ctrl+L  declare covalent link (auto-detect the placed warhead + declare)
 #   Ctrl+P  propagate covalent ligand to every NCS copy of the Cys
 #   Ctrl+U  full: propagate + refine via refmac.sh (-W waters)
-# (Ctrl+U is deliberately avoided -- Coot's native rock-view owns it; the other
+# (Ctrl+R is deliberately avoided -- Coot's native rock-view owns it; the other
 #  native Ctrl combos are W/F/B/C/M.)
 #
 # All three are INPUT-FREE: they auto-detect the ligand heavy atom sitting
@@ -215,7 +215,7 @@ def _install_keys():
             lambda: cv_key_propagate(True))
         print("[cootvalent] keys bound over the graphics window: "
               "Ctrl+L declare, Ctrl+P propagate, Ctrl+U full refine "
-              "(Ctrl+U is taken by Coot's rock-view).")
+              "(Ctrl+R is taken by Coot's rock-view).")
     except Exception:
         import traceback
         print("[cootvalent] key install failed:\n" + traceback.format_exc())
