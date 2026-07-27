@@ -165,7 +165,10 @@ from rdkit.Chem import RWMol
 
 ORDER = {"SINGLE": Chem.BondType.SINGLE, "DOUBLE": Chem.BondType.DOUBLE,
          "TRIPLE": Chem.BondType.TRIPLE, "AROM": Chem.BondType.AROMATIC,
-         "AROMATIC": Chem.BondType.AROMATIC, "DELOC": Chem.BondType.AROMATIC}
+         "AROMATIC": Chem.BondType.AROMATIC, "DELOC": Chem.BondType.AROMATIC,
+         # abbreviated forms seen in some acedrg / mmCIF value_order fields
+         "SING": Chem.BondType.SINGLE, "DOUB": Chem.BondType.DOUBLE,
+         "TRIP": Chem.BondType.TRIPLE, "ARO": Chem.BondType.AROMATIC}
 
 
 def parse_dict(path, comp):
@@ -200,6 +203,9 @@ def parse_dict(path, comp):
         if s.startswith("_chem_comp_bond.comp_id"):
             cols, j = loop_cols(i)
             idx = {c.split(".", 1)[1]: k for k, c in enumerate(cols)}
+            # bond-order column: acedrg/mmCIF uses 'value_order'; the classic
+            # CCP4 monomer library uses 'type'. Accept either.
+            oc = idx.get("value_order", idx.get("type"))
             k = j
             while k < len(lines):
                 r = lines[k].split()
@@ -208,8 +214,8 @@ def parse_dict(path, comp):
                     break
                 if r[0] != comp:
                     break
-                bonds.append((r[idx["atom_id_1"]], r[idx["atom_id_2"]],
-                              r[idx["type"]].upper()))
+                order = r[oc].upper() if (oc is not None and oc < len(r)) else "SINGLE"
+                bonds.append((r[idx["atom_id_1"]], r[idx["atom_id_2"]], order))
                 k += 1
     return atoms, bonds
 
