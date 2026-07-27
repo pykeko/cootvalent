@@ -99,7 +99,7 @@ Tools: `coot_eval`, `cv_build_at_cys`, `cv_warhead_dist`, `cv_merge_ligand`,
 |---|---|---|---|---|
 | F1 | acrylamide → saturated β-thioether | ✅ | ✅ (validated) | ✅ C=C→C–C |
 | F2 | α,β-ynamide/butynamide → vinyl thioether | ✅ | ✅ (validated) | ✅ C≡C→C=C |
-| F3 | α-halo-acetamide SN2 thioether (incl. **α-chlorofluoroacetamide, CFA**) | ✅ | ✅ (validation pending real structure) | ✅ dehalogenate (F retained) |
+| F3 | α-halo-acetamide SN2 thioether (incl. **α-chlorofluoroacetamide, CFA**) | ✅ | ✅ (validated, 7XAR) | ✅ dehalogenate (F retained) |
 | F4 | epoxide → β-hydroxy thioether | ✅ | ❌ | — |
 | F5 | maleimide → 3-thiosuccinimide | ✅ | ❌ | — |
 | F6 | reversible ketone/aldehyde hemithioketal | ✅ | ❌ | — |
@@ -141,6 +141,12 @@ On real crystallographic data (2026-07-16):
   refine to canonical S–C within ~0.1 Å.
 - **Auto-detect** — F1/F2 correct on 5P9J/6JX0/8FD9; 4YHF (α-cyanoacetamide,
   outside the F1–F6 taxonomy) correctly declines.
+- **F3 / CFA (α-chlorofluoroacetamide)** — re-refined **7XAR** (SARS-CoV-2 Mpro,
+  ligand BOV at Cys145, 1.6 Å) with the generated F3 link: both NCS copies refine
+  to S–C 1.82–1.84 Å with the **α-fluorine retained** (C–F 1.39–1.41 Å),
+  R/R-free 0.17/0.19 — matching the deposited covalent geometry. Other confirmed
+  CFA-Cys structures: **5Y25** (EGFR Cys797, ligand 8LU, the Nagano/Ojida CFA
+  warhead) and **9BSI** (Mpro Cys145, ligand A1AR9).
 
 Full logs in [`overnight/`](overnight/).
 
