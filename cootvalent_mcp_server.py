@@ -53,33 +53,60 @@ def _next_id():
     return last + 1
 
 
-def _send(code, timeout=None):
-    """Write a request, wait for the matching response, return a text summary."""
+_NOT_ARMED = (
+    "The cootvalent bridge is not responding, so no live bcoot is connected.\n"
+    "In your bcoot Python console, run:\n"
+    "    cootvalent_mcp_start()\n"
+    "(first  exec(open('~/.coot-preferences/cootvalent-mcp-bridge.py').read())  "
+    "if it's undefined), then retry. Queue dir: %s" % MCP_DIR
+)
+
+
+def _roundtrip(code, timeout):
+    """Send one request, wait for its response, or None if no reply in time."""
     os.makedirs(MCP_DIR, exist_ok=True)
     rid = _next_id()
     tmp = _REQ + ".tmp"
     with open(tmp, "w") as fh:
         json.dump({"id": rid, "code": code}, fh)
     os.replace(tmp, _REQ)
-    deadline = time.time() + (timeout or _TIMEOUT)
+    deadline = time.time() + timeout
     while time.time() < deadline:
         try:
             with open(_RESP) as fh:
                 resp = json.load(fh)
             if int(resp.get("id", -1)) == rid:
-                parts = []
-                if resp.get("stdout"):
-                    parts.append(resp["stdout"].rstrip())
-                if resp.get("result"):
-                    parts.append("=> " + resp["result"])
-                if not resp.get("ok"):
-                    parts.append("ERROR:\n" + resp.get("error", ""))
-                return "\n".join(parts) if parts else "(no output)"
+                return resp
         except Exception:
             pass
         time.sleep(0.2)
-    return ("TIMEOUT after %ss -- is the bridge armed in bcoot "
-            "(cootvalent_mcp_start())?" % (timeout or _TIMEOUT))
+    return None
+
+
+def _armed(probe_timeout=2.5):
+    """Fast heartbeat: is a live bcoot polling the queue right now?"""
+    r = _roundtrip("1", probe_timeout)   # cheap expression the bridge evals
+    return bool(r and r.get("ok"))
+
+
+def _send(code, timeout=None):
+    """Write a request, wait for the matching response, return a text summary.
+    Fails fast with an actionable message if the bridge isn't armed, so tools
+    don't hang for the full timeout against a dead/absent session."""
+    if not _armed():
+        return _NOT_ARMED
+    resp = _roundtrip(code, timeout or _TIMEOUT)
+    if resp is None:
+        return ("No response after %ss. The command may still be running in "
+                "bcoot, or the session stopped. Check bcoot." % (timeout or _TIMEOUT))
+    parts = []
+    if resp.get("stdout"):
+        parts.append(resp["stdout"].rstrip())
+    if resp.get("result"):
+        parts.append("=> " + resp["result"])
+    if not resp.get("ok"):
+        parts.append("ERROR:\n" + resp.get("error", ""))
+    return "\n".join(parts) if parts else "(no output)"
 
 
 @mcp.tool()
