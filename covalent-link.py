@@ -109,6 +109,21 @@ FAMILIES = {
         "name": "Cys-S to alpha-cyano/chloro-acetamide SN2 thioether",
         "target": 1.81, "esd": 0.02, "kind": "sp3",
     },
+    "F4": {
+        "link_id": "CYS-EPO",
+        "name": "Cys-S to epoxide-opened beta-hydroxy thioether",
+        "target": 1.81, "esd": 0.02, "kind": "sp3",
+    },
+    "F5": {
+        "link_id": "CYS-MAL",
+        "name": "Cys-S to maleimide 3-thiosuccinimide adduct",
+        "target": 1.81, "esd": 0.02, "kind": "sp3",
+    },
+    "F6": {
+        "link_id": "CYS-KET",
+        "name": "Cys-S to reversible ketone/aldehyde hemithioketal",
+        "target": 1.85, "esd": 0.03, "kind": "sp3",
+    },
 }
 # The auto-detector (covalent-detect.py) labels the SN2 chloro/cyano-acetamide
 # class "F3"; alias it to the CAA link builder so detect->declare works for it.

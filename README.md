@@ -100,9 +100,9 @@ Tools: `coot_eval`, `cv_build_at_cys`, `cv_warhead_dist`, `cv_merge_ligand`,
 | F1 | acrylamide → saturated β-thioether | ✅ | ✅ (validated) | ✅ C=C→C–C |
 | F2 | α,β-ynamide/butynamide → vinyl thioether | ✅ | ✅ (validated) | ✅ C≡C→C=C |
 | F3 | α-halo-acetamide SN2 thioether (incl. **α-chlorofluoroacetamide, CFA**) | ✅ | ✅ (validated, 7XAR) | ✅ dehalogenate (F retained) |
-| F4 | epoxide → β-hydroxy thioether | ✅ | ❌ | — |
-| F5 | maleimide → 3-thiosuccinimide | ✅ | ❌ | — |
-| F6 | reversible ketone/aldehyde hemithioketal | ✅ | ❌ | — |
+| F4 | epoxide → β-hydroxy thioether | ✅ | ✅ (unvalidated) | ✅ ring-open →OH |
+| F5 | maleimide → 3-thiosuccinimide | ✅ | ✅ (unvalidated) | ✅ C=C→saturated |
+| F6 | reversible ketone/aldehyde hemithioketal | ✅ | ✅ (unvalidated) | ✅ C=O→C–OH |
 
 **Reacted build**: `cv_build_at_cys(smiles, chain, resno, family=...)` transforms
 the unreacted SMILES to the covalent-product form for the family *before* acedrg
@@ -152,8 +152,12 @@ Full logs in [`overnight/`](overnight/).
 
 ## Caveats
 
-- **F4/F5/F6 detector paths** are implemented from the taxonomy but not yet
-  exercised on real data (no epoxide/maleimide/ketone test set to hand).
+- **F4/F5/F6** now have declare + reacted-build support (all sp3 thioether
+  links: CYS-EPO / CYS-MAL / CYS-KET), but are **not yet validated** against
+  deposited structures the way F1/F2/F3 are — treat their geometry as a starting
+  point. **F6 especially**: the hemithioketal is reversible, and the ketone/
+  aldehyde reduction can match the wrong carbonyl in a poly-carbonyl ligand, so
+  always eyeball the built ligand before declaring.
 - **NCS propagation is a geometric starting point, not a verdict.** It places a
   copy at every equivalent Cys assuming the pocket is NCS-conserved; occupancy
   and even presence vary per copy (partial reaction is common), so check each

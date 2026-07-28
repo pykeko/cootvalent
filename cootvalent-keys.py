@@ -42,6 +42,17 @@ _REACT_RXN = {
     # gains an H (the placeholder the link deletes to bond S). No order change.
     "F3": "[Cl,Br,I][C:1][C:3](=[O:4])[N:5]>>[C:1][C:3](=[O:4])[N:5]",
     "CAA": "[Cl,Br,I][C:1][C:3](=[O:4])[N:5]>>[C:1][C:3](=[O:4])[N:5]",
+    # F4 epoxide -> beta-hydroxy thioether: the ring opens, one carbon keeps the
+    # O as a hydroxyl, the S-carbon gains an H placeholder.
+    "F4": "[C:1]1[O:2][C:3]1>>[C:1]([O:2])[C:3]",
+    # F5 maleimide -> 3-thiosuccinimide: the ring C=C saturates (both ring
+    # carbons gain H; the S-carbon's is the placeholder).
+    "F5": "[C:1](=[O:6])[C:2]=[C:3][C:4](=[O:7])>>[C:1](=[O:6])[C:2][C:3][C:4](=[O:7])",
+    # F6 reversible ketone/aldehyde -> hemithioketal: C=O becomes an sp3 C-OH
+    # (S adds to the carbonyl C). Only a true ketone/aldehyde (C=O flanked by
+    # C/H, NOT an amide/acid) matches. NOTE: reversible + can match the wrong
+    # carbonyl in a poly-ketone; check the built ligand before trusting it.
+    "F6": "[#6:9][C:1](=[O:2])[#6,#1:8]>>[#6:9][C:1]([O:2])[#6,#1:8]",
 }
 
 _REACT_WORKER = r'''
